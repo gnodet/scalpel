@@ -140,13 +140,6 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                 return;
             }
 
-            // Filter to only included paths (if configured)
-            changedFiles = filterIncludedPaths(changedFiles, config);
-            if (changedFiles.isEmpty()) {
-                logger.info("Scalpel: No changed files match includePaths filters, building all modules");
-                return;
-            }
-
             // Check full build triggers
             String triggerFile = findFullBuildTrigger(changedFiles, config);
             if (triggerFile != null) {
@@ -288,6 +281,45 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             Set<MavenProject> allAffected = new LinkedHashSet<>(directlyAffected);
             allAffected.addAll(transitivelyAffected.keySet());
 
+            // Apply includePaths module filter: restrict affected modules by path while
+            // keeping full diff visibility for change detection and POM analysis above.
+            if (!config.getIncludePaths().isEmpty()) {
+                int beforeCount = allAffected.size();
+                List<PathMatcher> includeMatchers = new ArrayList<>();
+                for (String pattern : config.getIncludePaths()) {
+                    includeMatchers.add(FileSystems.getDefault().getPathMatcher(GLOB_PREFIX + pattern));
+                }
+                directlyAffected.removeIf(p -> !matchesIncludePaths(p, includeMatchers, reactorRoot));
+                transitivelyAffected.keySet().removeIf(p -> !matchesIncludePaths(p, includeMatchers, reactorRoot));
+                testOnlyModules.retainAll(directlyAffected);
+                forceIncluded.retainAll(directlyAffected);
+
+                allAffected = new LinkedHashSet<>(directlyAffected);
+                allAffected.addAll(transitivelyAffected.keySet());
+
+                int removedCount = beforeCount - allAffected.size();
+                if (removedCount > 0) {
+                    logger.info("Scalpel: {} modules excluded by includePaths filters", removedCount);
+                }
+
+                if (allAffected.isEmpty()) {
+                    logger.info("Scalpel: No modules match includePaths filters");
+                    if (config.isModeReport()) {
+                        writeReport(
+                                config,
+                                reactorRoot,
+                                AnalysisContext.empty(
+                                        changedFiles,
+                                        changedProperties,
+                                        changedManagedDepGAs,
+                                        changedManagedPluginGAs));
+                    } else if (config.isModeSkipTests()) {
+                        skipTestsOnAll(allProjects);
+                    }
+                    return;
+                }
+            }
+
             // Write impacted module log if configured
             if (config.getImpactedLog() != null) {
                 writeImpactedLog(config, reactorRoot, allAffected);
@@ -383,28 +415,17 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
         return filtered;
     }
 
-    private Set<String> filterIncludedPaths(Set<String> changedFiles, ScalpelConfiguration config) {
-        if (config.getIncludePaths().isEmpty()) {
-            return changedFiles;
-        }
-        List<PathMatcher> includeMatchers = new ArrayList<>();
-        for (String pattern : config.getIncludePaths()) {
-            includeMatchers.add(FileSystems.getDefault().getPathMatcher(GLOB_PREFIX + pattern));
-        }
-        Set<String> filtered = new LinkedHashSet<>();
-        for (String file : changedFiles) {
-            for (PathMatcher matcher : includeMatchers) {
-                if (matcher.matches(Paths.get(file))) {
-                    filtered.add(file);
-                    break;
-                }
+    private boolean matchesIncludePaths(MavenProject project, List<PathMatcher> matchers, Path reactorRoot) {
+        String relPath = relativePath(reactorRoot, project);
+        Path modulePath = Paths.get(relPath);
+        for (PathMatcher matcher : matchers) {
+            // Match the module path directly (e.g., "module-a" matches pattern "module-a")
+            // or match a file within the module (e.g., "module-a/pom.xml" matches pattern "module-a/**")
+            if (matcher.matches(modulePath) || matcher.matches(modulePath.resolve("pom.xml"))) {
+                return true;
             }
         }
-        int excludedCount = changedFiles.size() - filtered.size();
-        if (excludedCount > 0) {
-            logger.info("Scalpel: {} files excluded by includePaths filters", excludedCount);
-        }
-        return filtered;
+        return false;
     }
 
     private String findFullBuildTrigger(Set<String> changedFiles, ScalpelConfiguration config) {

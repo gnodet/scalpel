@@ -1780,7 +1780,7 @@ class ScalpelLifecycleParticipantTest {
     }
 
     @Test
-    void reportMode_includePathsFiltersChangedFiles() throws Exception {
+    void reportMode_includePathsFiltersModules() throws Exception {
         Path root = tempDir.resolve("project");
         Files.createDirectories(root);
 
@@ -1893,7 +1893,7 @@ class ScalpelLifecycleParticipantTest {
                 .thenReturn(new ChangeDetectionResult(changedFiles, new HashMap<>()));
         setupEmptyDependencyResolution();
 
-        // No includePaths set — all files should be included
+        // No includePaths set — all modules should be included
         MavenSession session = createSimpleSession(root, allProjects, "report");
 
         participant.afterProjectsRead(session);
@@ -1935,7 +1935,7 @@ class ScalpelLifecycleParticipantTest {
         setupEmptyDependencyResolution();
 
         MavenSession session = createSimpleSession(root, allProjects, "report");
-        // Include only module-a paths, but exclude .md files
+        // Include only module-a modules, but exclude .md files from change detection
         session.getSystemProperties().setProperty("scalpel.includePaths", "module-a/**");
         session.getSystemProperties().setProperty("scalpel.excludePaths", "**/*.md");
 
@@ -1947,6 +1947,138 @@ class ScalpelLifecycleParticipantTest {
         assertTrue(modulePresent(json, "module-a"), "module-a should be in report (Foo.java matched)");
         assertFalse(modulePresent(json, "module-b"), "module-b should NOT be in report (not in includePaths)");
         assertFalse(json.contains("README.md"), "README.md should be excluded");
+    }
+
+    @Test
+    void reportMode_includePathsPreservesFullDiffVisibility() throws Exception {
+        // Parent POM in a subdirectory changes a managed dependency version.
+        // module-a uses that dependency and should be detected as directly affected,
+        // even though the POM change (parent/pom.xml) is outside the includePaths scope.
+        // This verifies that includePaths filters MODULES, not changed files.
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+
+        String rootPom = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>com.example</groupId>
+                  <artifactId>root</artifactId>
+                  <version>1.0</version>
+                  <packaging>pom</packaging>
+                  <modules><module>parent</module><module>module-a</module><module>module-b</module></modules>
+                </project>
+                """;
+        writePom(root, "pom.xml", rootPom);
+
+        String oldParentPom = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>com.example</groupId>
+                  <artifactId>parent</artifactId>
+                  <version>1.0</version>
+                  <packaging>pom</packaging>
+                  <properties>
+                    <lib.version>1.0</lib.version>
+                  </properties>
+                  <dependencyManagement><dependencies>
+                    <dependency>
+                      <groupId>org.example</groupId>
+                      <artifactId>managed-lib</artifactId>
+                      <version>${lib.version}</version>
+                    </dependency>
+                  </dependencies></dependencyManagement>
+                </project>
+                """;
+        String newParentPom = oldParentPom.replace("<lib.version>1.0</lib.version>", "<lib.version>2.0</lib.version>");
+        writePom(root, "parent/pom.xml", newParentPom);
+
+        String moduleAPom = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <parent><groupId>com.example</groupId><artifactId>parent</artifactId><version>1.0</version></parent>
+                  <artifactId>module-a</artifactId>
+                  <dependencies>
+                    <dependency><groupId>org.example</groupId><artifactId>managed-lib</artifactId></dependency>
+                  </dependencies>
+                </project>
+                """;
+        writePom(root, "module-a/pom.xml", moduleAPom);
+
+        String moduleBPom = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <parent><groupId>com.example</groupId><artifactId>parent</artifactId><version>1.0</version></parent>
+                  <artifactId>module-b</artifactId>
+                </project>
+                """;
+        writePom(root, "module-b/pom.xml", moduleBPom);
+
+        MavenProject rootProject = createProject("com.example", "root", "1.0", root, "pom.xml", rootPom);
+        rootProject.getModel().setPackaging("pom");
+        MavenProject parentProject =
+                createProject("com.example", "parent", "1.0", root, "parent/pom.xml", newParentPom);
+        parentProject.getModel().setPackaging("pom");
+        parentProject.setParent(rootProject);
+        MavenProject moduleA = createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", moduleAPom);
+        moduleA.setParent(parentProject);
+        MavenProject moduleB = createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", moduleBPom);
+        moduleB.setParent(parentProject);
+
+        List<MavenProject> allProjects = List.of(rootProject, parentProject, moduleA, moduleB);
+
+        // Only parent/pom.xml changed — outside the includePaths scope
+        Set<String> changedFiles = new LinkedHashSet<>();
+        changedFiles.add("parent/pom.xml");
+        Map<String, byte[]> oldPoms = new HashMap<>();
+        oldPoms.put("parent/pom.xml", oldParentPom.getBytes(StandardCharsets.UTF_8));
+        when(scalpelCore.detectChanges(any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(changedFiles, oldPoms));
+
+        DependencyResolutionResult emptyResolution = mock(DependencyResolutionResult.class);
+        when(emptyResolution.getResolvedDependencies()).thenReturn(List.of());
+        when(dependenciesResolver.resolve(any(DefaultDependencyResolutionRequest.class)))
+                .thenReturn(emptyResolution);
+
+        MavenSession session = mock(MavenSession.class);
+        Properties sysProps = new Properties();
+        sysProps.setProperty("scalpel.mode", "report");
+        sysProps.setProperty("scalpel.baseBranch", "base");
+        sysProps.setProperty("scalpel.includePaths", "module-a/**");
+        when(session.getSystemProperties()).thenReturn(sysProps);
+        when(session.getUserProperties()).thenReturn(new Properties());
+        when(session.getProjects()).thenReturn(allProjects);
+        MavenExecutionRequest execRequest = mock(MavenExecutionRequest.class);
+        when(execRequest.getMultiModuleProjectDirectory()).thenReturn(root.toFile());
+        when(session.getRequest()).thenReturn(execRequest);
+        when(session.getRepositorySession()).thenReturn(mock(RepositorySystemSession.class));
+        ProjectDependencyGraph graph = mock(ProjectDependencyGraph.class);
+        when(graph.getDownstreamProjects(any(), anyBoolean())).thenReturn(List.of());
+        when(graph.getUpstreamProjects(any(), anyBoolean())).thenReturn(List.of());
+        when(graph.getSortedProjects()).thenReturn(allProjects);
+        when(session.getProjectDependencyGraph()).thenReturn(graph);
+
+        participant.afterProjectsRead(session);
+
+        Path reportFile = root.resolve("target/scalpel-report.json");
+        assertTrue(Files.exists(reportFile), "Report file should be created");
+
+        String json = new String(Files.readAllBytes(reportFile), StandardCharsets.UTF_8);
+
+        // module-a should be in the report: detected as affected by the parent POM change
+        // (managed dependency version change), even though the POM change is outside includePaths
+        assertTrue(
+                modulePresent(json, "module-a"),
+                "module-a should be in report (POM change outside scope still propagates)");
+
+        // module-b should NOT be in report (not affected by the managed dep change, not in includePaths)
+        assertFalse(modulePresent(json, "module-b"), "module-b should NOT be in report");
+
+        // parent should NOT be in report (filtered by includePaths)
+        assertFalse(modulePresent(json, "parent"), "parent should NOT be in report (outside includePaths)");
     }
 
     @Test
