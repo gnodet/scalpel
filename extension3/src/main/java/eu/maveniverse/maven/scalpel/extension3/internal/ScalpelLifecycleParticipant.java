@@ -140,6 +140,13 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                 return;
             }
 
+            // Filter to only included paths (if configured)
+            changedFiles = filterIncludedPaths(changedFiles, config);
+            if (changedFiles.isEmpty()) {
+                logger.info("Scalpel: No changed files match includePaths filters, building all modules");
+                return;
+            }
+
             // Check full build triggers
             String triggerFile = findFullBuildTrigger(changedFiles, config);
             if (triggerFile != null) {
@@ -372,6 +379,30 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
         int excludedCount = changedFiles.size() - filtered.size();
         if (excludedCount > 0) {
             logger.info("Scalpel: {} files excluded by path filters", excludedCount);
+        }
+        return filtered;
+    }
+
+    private Set<String> filterIncludedPaths(Set<String> changedFiles, ScalpelConfiguration config) {
+        if (config.getIncludePaths().isEmpty()) {
+            return changedFiles;
+        }
+        List<PathMatcher> includeMatchers = new ArrayList<>();
+        for (String pattern : config.getIncludePaths()) {
+            includeMatchers.add(FileSystems.getDefault().getPathMatcher(GLOB_PREFIX + pattern));
+        }
+        Set<String> filtered = new LinkedHashSet<>();
+        for (String file : changedFiles) {
+            for (PathMatcher matcher : includeMatchers) {
+                if (matcher.matches(Paths.get(file))) {
+                    filtered.add(file);
+                    break;
+                }
+            }
+        }
+        int excludedCount = changedFiles.size() - filtered.size();
+        if (excludedCount > 0) {
+            logger.info("Scalpel: {} files excluded by includePaths filters", excludedCount);
         }
         return filtered;
     }
