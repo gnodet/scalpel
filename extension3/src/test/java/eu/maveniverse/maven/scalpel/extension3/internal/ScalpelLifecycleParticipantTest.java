@@ -13,6 +13,7 @@ import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -2160,6 +2161,101 @@ class ScalpelLifecycleParticipantTest {
         assertTrue(
                 "true".equals(moduleB.getProperties().getProperty("maven.test.skip")),
                 "module-b should have tests skipped (outside includePaths)");
+    }
+
+    @Test
+    void trimMode_includePathsExcludesDownstreamOutsideScope() throws Exception {
+        // module-a has source changes and matches includePaths.
+        // module-b depends on module-a (downstream) but is outside includePaths.
+        // The trimmed reactor should NOT include module-b.
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+
+        String parentPom = simpleParentPom("module-a", "module-b");
+        writePom(root, "pom.xml", parentPom);
+        String moduleAPom = simpleChildPom("module-a");
+        writePom(root, "module-a/pom.xml", moduleAPom);
+        String moduleBPom = simpleChildPom("module-b");
+        writePom(root, "module-b/pom.xml", moduleBPom);
+
+        MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
+        parentProject.getModel().setPackaging("pom");
+        MavenProject moduleA = createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", moduleAPom);
+        moduleA.setParent(parentProject);
+        MavenProject moduleB = createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", moduleBPom);
+        moduleB.setParent(parentProject);
+
+        List<MavenProject> allProjects = List.of(parentProject, moduleA, moduleB);
+
+        Set<String> changedFiles = new LinkedHashSet<>();
+        changedFiles.add("module-a/src/main/java/Foo.java");
+        when(scalpelCore.detectChanges(any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(changedFiles, new HashMap<>()));
+        setupEmptyDependencyResolution();
+
+        // Set up dependency graph: module-b is downstream of module-a
+        MavenSession session = createSimpleSession(root, allProjects, "trim");
+        ProjectDependencyGraph graph = session.getProjectDependencyGraph();
+        when(graph.getDownstreamProjects(eq(moduleA), anyBoolean())).thenReturn(List.of(moduleB));
+        session.getSystemProperties().setProperty("scalpel.includePaths", "module-a/**");
+
+        participant.afterProjectsRead(session);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<MavenProject>> captor = ArgumentCaptor.forClass(List.class);
+        verify(session).setProjects(captor.capture());
+        List<MavenProject> trimmed = captor.getValue();
+        assertTrue(trimmed.contains(moduleA), "module-a should be in trimmed reactor (matches includePaths)");
+        assertFalse(
+                trimmed.contains(moduleB),
+                "module-b should NOT be in trimmed reactor (downstream but outside includePaths)");
+    }
+
+    @Test
+    void reportMode_includePathsExcludesDownstreamOutsideScope() throws Exception {
+        // module-a has source changes and matches includePaths.
+        // module-b depends on module-a (downstream) but is outside includePaths.
+        // The report should NOT include module-b.
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+
+        String parentPom = simpleParentPom("module-a", "module-b");
+        writePom(root, "pom.xml", parentPom);
+        String moduleAPom = simpleChildPom("module-a");
+        writePom(root, "module-a/pom.xml", moduleAPom);
+        String moduleBPom = simpleChildPom("module-b");
+        writePom(root, "module-b/pom.xml", moduleBPom);
+
+        MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
+        parentProject.getModel().setPackaging("pom");
+        MavenProject moduleA = createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", moduleAPom);
+        moduleA.setParent(parentProject);
+        MavenProject moduleB = createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", moduleBPom);
+        moduleB.setParent(parentProject);
+
+        List<MavenProject> allProjects = List.of(parentProject, moduleA, moduleB);
+
+        Set<String> changedFiles = new LinkedHashSet<>();
+        changedFiles.add("module-a/src/main/java/Foo.java");
+        when(scalpelCore.detectChanges(any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(changedFiles, new HashMap<>()));
+        setupEmptyDependencyResolution();
+
+        // Set up dependency graph: module-b is downstream of module-a
+        MavenSession session = createSimpleSession(root, allProjects, "report");
+        ProjectDependencyGraph graph = session.getProjectDependencyGraph();
+        when(graph.getDownstreamProjects(eq(moduleA), anyBoolean())).thenReturn(List.of(moduleB));
+        session.getSystemProperties().setProperty("scalpel.includePaths", "module-a/**");
+
+        participant.afterProjectsRead(session);
+
+        Path reportFile = root.resolve("target/scalpel-report.json");
+        assertTrue(Files.exists(reportFile));
+        String json = new String(Files.readAllBytes(reportFile), StandardCharsets.UTF_8);
+        assertTrue(modulePresent(json, "module-a"), "module-a should be in report (matches includePaths)");
+        assertFalse(
+                modulePresent(json, "module-b"),
+                "module-b should NOT be in report (downstream but outside includePaths)");
     }
 
     @Test
