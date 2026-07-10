@@ -2082,6 +2082,87 @@ class ScalpelLifecycleParticipantTest {
     }
 
     @Test
+    void trimMode_includePathsFiltersReactor() throws Exception {
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+
+        String parentPom = simpleParentPom("module-a", "module-b");
+        writePom(root, "pom.xml", parentPom);
+        String moduleAPom = simpleChildPom("module-a");
+        writePom(root, "module-a/pom.xml", moduleAPom);
+        String moduleBPom = simpleChildPom("module-b");
+        writePom(root, "module-b/pom.xml", moduleBPom);
+
+        MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
+        parentProject.getModel().setPackaging("pom");
+        MavenProject moduleA = createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", moduleAPom);
+        moduleA.setParent(parentProject);
+        MavenProject moduleB = createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", moduleBPom);
+        moduleB.setParent(parentProject);
+
+        List<MavenProject> allProjects = List.of(parentProject, moduleA, moduleB);
+
+        Set<String> changedFiles = new LinkedHashSet<>();
+        changedFiles.add("module-a/src/main/java/Foo.java");
+        changedFiles.add("module-b/src/main/java/Bar.java");
+        when(scalpelCore.detectChanges(any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(changedFiles, new HashMap<>()));
+        setupEmptyDependencyResolution();
+
+        MavenSession session = createSimpleSession(root, allProjects, "trim");
+        session.getSystemProperties().setProperty("scalpel.includePaths", "module-a/**");
+
+        participant.afterProjectsRead(session);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<MavenProject>> captor = ArgumentCaptor.forClass(List.class);
+        verify(session).setProjects(captor.capture());
+        List<MavenProject> trimmed = captor.getValue();
+        assertTrue(trimmed.contains(moduleA), "module-a should be in trimmed reactor (matches includePaths)");
+        assertFalse(trimmed.contains(moduleB), "module-b should NOT be in trimmed reactor (outside includePaths)");
+    }
+
+    @Test
+    void skipTestsMode_includePathsFiltersModules() throws Exception {
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+
+        String parentPom = simpleParentPom("module-a", "module-b");
+        writePom(root, "pom.xml", parentPom);
+        String moduleAPom = simpleChildPom("module-a");
+        writePom(root, "module-a/pom.xml", moduleAPom);
+        String moduleBPom = simpleChildPom("module-b");
+        writePom(root, "module-b/pom.xml", moduleBPom);
+
+        MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
+        parentProject.getModel().setPackaging("pom");
+        MavenProject moduleA = createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", moduleAPom);
+        moduleA.setParent(parentProject);
+        MavenProject moduleB = createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", moduleBPom);
+        moduleB.setParent(parentProject);
+
+        List<MavenProject> allProjects = List.of(parentProject, moduleA, moduleB);
+
+        Set<String> changedFiles = new LinkedHashSet<>();
+        changedFiles.add("module-a/src/main/java/Foo.java");
+        changedFiles.add("module-b/src/main/java/Bar.java");
+        when(scalpelCore.detectChanges(any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(changedFiles, new HashMap<>()));
+        setupEmptyDependencyResolution();
+
+        MavenSession session = createSimpleSession(root, allProjects, "skip-tests");
+        session.getSystemProperties().setProperty("scalpel.includePaths", "module-a/**");
+
+        participant.afterProjectsRead(session);
+
+        // module-b is affected by source changes but excluded by includePaths,
+        // so it should have tests skipped
+        assertTrue(
+                "true".equals(moduleB.getProperties().getProperty("maven.test.skip")),
+                "module-b should have tests skipped (outside includePaths)");
+    }
+
+    @Test
     void reportMode_disableTriggerCausesFullBuild() throws Exception {
         Path root = tempDir.resolve("project");
         Files.createDirectories(root);
