@@ -2265,33 +2265,43 @@
       "number": 136,
       "title": "Fix #95: shallow-clone test coverage, shallow detection, actionable warnings",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-25T12:51:49Z",
-      "verdict": "REQUEST_CHANGES",
-      "notes": "bug: 2 high confirmed (modernizer violations blocking CI). 2 low confirmed. Verifier: 4/4 confirmed, 0 FP.",
+      "reviewed_at": "2026-08-25T14:07:04Z",
+      "verdict": "APPROVE",
+      "notes": "re-review approved",
       "interactions": [
         {
           "at": "2026-08-25T12:51:49Z",
           "verdict": "REQUEST_CHANGES",
           "notes": "bug: 2 high confirmed (modernizer violations blocking CI). 2 low confirmed. Verifier: 4/4 confirmed, 0 FP."
+        },
+        {
+          "at": "2026-08-25T14:07:04Z",
+          "verdict": "APPROVE",
+          "notes": "re-review approved"
         }
       ],
-      "review_count": 1
+      "review_count": 2
     },
     {
       "number": 137,
       "title": "Fix #89: report writes honour failSafe; every bail-out overwrites stale reports with a status document",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-25T13:16:04Z",
-      "verdict": "REQUEST_CHANGES",
-      "notes": "bug: 1 high confirmed (null baseBranch crash in writeStatusReport), 1 medium confirmed (skip reason routing too narrow). 0% FP rate.",
+      "reviewed_at": "2026-08-25T14:07:04Z",
+      "verdict": "APPROVE",
+      "notes": "re-review approved",
       "interactions": [
         {
           "at": "2026-08-25T13:16:04Z",
           "verdict": "REQUEST_CHANGES",
           "notes": "bug: 1 high confirmed (null baseBranch crash in writeStatusReport), 1 medium confirmed (skip reason routing too narrow). 0% FP rate."
+        },
+        {
+          "at": "2026-08-25T14:07:04Z",
+          "verdict": "APPROVE",
+          "notes": "re-review approved"
         }
       ],
-      "review_count": 1
+      "review_count": 2
     },
     {
       "number": 138,
