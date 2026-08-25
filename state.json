@@ -2452,6 +2452,86 @@
         }
       ],
       "review_count": 1
+    },
+    {
+      "number": 25683,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-25T13:56:11Z",
+      "verdict": "APPROVE",
+      "notes": "Security fix: XXE/local-file-disclosure via documentType=InputSource in XPathBuilder",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:56:11Z",
+          "verdict": "APPROVE",
+          "notes": "Security fix: XXE/local-file-disclosure via documentType=InputSource in XPathBuilder"
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 25713,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-25T13:56:11Z",
+      "verdict": "APPROVE",
+      "notes": "Config: dependabot grouping for Apache Avro dependencies",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:56:11Z",
+          "verdict": "APPROVE",
+          "notes": "Config: dependabot grouping for Apache Avro dependencies"
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 25714,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-25T13:56:11Z",
+      "verdict": "APPROVE",
+      "notes": "Config: dependabot grouping for Alibaba Cloud (aliyun) dependencies",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:56:11Z",
+          "verdict": "APPROVE",
+          "notes": "Config: dependabot grouping for Alibaba Cloud (aliyun) dependencies"
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 132,
+      "title": "Add .mvn/nisse.properties with export-subst for source-archive builds",
+      "author": "gnodet",
+      "reviewed_at": "2026-08-25T13:56:58Z",
+      "verdict": "APPROVE",
+      "notes": "chore: Build infrastructure for source-archive builds using nisse native fallback. Posted as COMMENT (operator's own PR). Suggested milestone 0.3.11.",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:56:58Z",
+          "verdict": "APPROVE",
+          "notes": "chore: Build infrastructure for source-archive builds using nisse native fallback. Posted as COMMENT (operator's own PR). Suggested milestone 0.3.11."
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 142,
+      "title": "Fix #93: explain mode with per-module decision evidence",
+      "author": "paoloantinori",
+      "reviewed_at": "2026-08-25T13:57:00Z",
+      "verdict": "APPROVE",
+      "notes": "enhancement: Opt-in explain mode surfacing per-module decision evidence in JSON report and logs. Suggested milestone 0.4.0.",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:57:00Z",
+          "verdict": "APPROVE",
+          "notes": "enhancement: Opt-in explain mode surfacing per-module decision evidence in JSON report and logs. Suggested milestone 0.4.0."
+        }
+      ],
+      "review_count": 1
     }
   ],
   "skipped_prs": [
@@ -2557,12 +2637,12 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-25T12:26:26Z",
+  "last_reviewed_updated_at": "2026-08-25T13:45:22Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-25T13:46:05Z",
+    "timestamp": "2026-08-25T13:57:04Z",
     "prs_checked": 3,
-    "reviews_posted": 3,
-    "tokens_estimate": 132000
+    "reviews_posted": 2,
+    "tokens_estimate": 145000
   }
 }
