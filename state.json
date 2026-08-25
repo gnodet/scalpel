@@ -2225,49 +2225,49 @@
       "review_count": 1
     },
     {
-      "number": 129,
-      "title": "Fix #82: make swallowed IO errors fail toward affected instead of under-building",
+      "number": 134,
+      "title": "Fix #102, fix #103: pin actions to SHAs, permissions blocks, quoted version expansion",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-25T12:27:25Z",
+      "reviewed_at": "2026-08-25T12:51:49Z",
       "verdict": "APPROVE",
-      "notes": "bug: Well-scoped bugfix aligning 6 IO error handling sites with conservative posture. 2 low-severity items noted.",
+      "notes": "chore: CI hardening - SHA-pinned actions, permissions blocks, quoted expansion. 1 low (version comment).",
       "interactions": [
         {
-          "at": "2026-08-25T12:27:25Z",
+          "at": "2026-08-25T12:51:49Z",
           "verdict": "APPROVE",
-          "notes": "bug: Well-scoped bugfix aligning 6 IO error handling sites with conservative posture. 2 low-severity items noted."
+          "notes": "chore: CI hardening - SHA-pinned actions, permissions blocks, quoted expansion. 1 low (version comment)."
         }
       ],
       "review_count": 1
     },
     {
-      "number": 133,
-      "title": "Fix #126: unordered list comparison must not collapse duplicate entries",
+      "number": 135,
+      "title": "Fix #85: validate fetch remote against configured remotes, handle slash-containing branch names",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-25T12:27:25Z",
+      "reviewed_at": "2026-08-25T12:51:49Z",
       "verdict": "APPROVE",
-      "notes": "bug: Clean bugfix replacing HashSet with sorted-list comparison. TDD RED-first approach. No findings.",
+      "notes": "bug: Security hardening - URL-injection prevention, remote allowlist, refname validation. 1 medium + 2 low non-blocking.",
       "interactions": [
         {
-          "at": "2026-08-25T12:27:25Z",
+          "at": "2026-08-25T12:51:49Z",
           "verdict": "APPROVE",
-          "notes": "bug: Clean bugfix replacing HashSet with sorted-list comparison. TDD RED-first approach. No findings."
+          "notes": "bug: Security hardening - URL-injection prevention, remote allowlist, refname validation. 1 medium + 2 low non-blocking."
         }
       ],
       "review_count": 1
     },
     {
-      "number": 132,
-      "title": "Add .mvn/nisse.properties with export-subst for source-archive builds",
-      "author": "gnodet",
-      "reviewed_at": "2026-08-25T12:27:25Z",
-      "verdict": "COMMENT",
-      "notes": "chore: Build infra PR using nisse fallback for source-archive builds. 3 low-severity items in test script. Posted as COMMENT (own PR).",
+      "number": 136,
+      "title": "Fix #95: shallow-clone test coverage, shallow detection, actionable warnings",
+      "author": "paoloantinori",
+      "reviewed_at": "2026-08-25T12:51:49Z",
+      "verdict": "REQUEST_CHANGES",
+      "notes": "bug: 2 high confirmed (modernizer violations blocking CI). 2 low confirmed. Verifier: 4/4 confirmed, 0 FP.",
       "interactions": [
         {
-          "at": "2026-08-25T12:27:25Z",
-          "verdict": "COMMENT",
-          "notes": "chore: Build infra PR using nisse fallback for source-archive builds. 3 low-severity items in test script. Posted as COMMENT (own PR)."
+          "at": "2026-08-25T12:51:49Z",
+          "verdict": "REQUEST_CHANGES",
+          "notes": "bug: 2 high confirmed (modernizer violations blocking CI). 2 low confirmed. Verifier: 4/4 confirmed, 0 FP."
         }
       ],
       "review_count": 1
@@ -2376,12 +2376,12 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-25T06:00:09Z",
+  "last_reviewed_updated_at": "2026-08-25T06:25:40Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-25T12:27:25Z",
+    "timestamp": "2026-08-25T12:51:49Z",
     "prs_checked": 3,
     "reviews_posted": 3,
-    "tokens_estimate": 206000
+    "tokens_estimate": 286000
   }
 }
