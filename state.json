@@ -1790,9 +1790,9 @@
       "number": 25621,
       "title": "",
       "author": "",
-      "reviewed_at": "2026-08-24T12:52:14Z",
+      "reviewed_at": "2026-08-25T13:16:18Z",
       "verdict": "COMMENT",
-      "notes": "NO_ACTION: APPROVED; rate limit hit before could check details",
+      "notes": "3 non-blocking suggestions: audience validation inconsistency, empty audience filtering, autowired annotation",
       "interactions": [
         {
           "at": "2026-08-24T08:40:56Z",
@@ -1823,9 +1823,14 @@
           "at": "2026-08-24T12:52:14Z",
           "verdict": "COMMENT",
           "notes": "NO_ACTION: APPROVED; rate limit hit before could check details"
+        },
+        {
+          "at": "2026-08-25T13:16:18Z",
+          "verdict": "COMMENT",
+          "notes": "3 non-blocking suggestions: audience validation inconsistency, empty audience filtering, autowired annotation"
         }
       ],
-      "review_count": 6
+      "review_count": 7
     },
     {
       "number": 25622,
@@ -2319,6 +2324,118 @@
         }
       ],
       "review_count": 1
+    },
+    {
+      "number": 25642,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-25T13:16:18Z",
+      "verdict": "APPROVE",
+      "notes": "Clean removal of over-prescriptive convention; evidence-based rationale",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:16:18Z",
+          "verdict": "APPROVE",
+          "notes": "Clean removal of over-prescriptive convention; evidence-based rationale"
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 25638,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-25T13:16:18Z",
+      "verdict": "APPROVE",
+      "notes": "Clean backport of #25617 to 4.18.x; fixes data-loss bug in change-feed consumer",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:16:18Z",
+          "verdict": "APPROVE",
+          "notes": "Clean backport of #25617 to 4.18.x; fixes data-loss bug in change-feed consumer"
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 130,
+      "title": "Fix #83: resource walk does not follow symlinks; depth and visit budgets enforced",
+      "author": "paoloantinori",
+      "reviewed_at": "2026-08-25T13:40:31Z",
+      "verdict": "APPROVE",
+      "notes": "bug: Well-executed security fix replacing vulnerable manual directory walk with Files.walkFileTree. TDD approach, comprehensive test suite. Suggested milestone 0.4.0.",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:40:31Z",
+          "verdict": "APPROVE",
+          "notes": "bug: Well-executed security fix replacing vulnerable manual directory walk with Files.walkFileTree. TDD approach, comprehensive test suite. Suggested milestone 0.4.0."
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 140,
+      "title": "Fix #111: integration-test the extension artifact",
+      "author": "paoloantinori",
+      "reviewed_at": "2026-08-25T13:40:32Z",
+      "verdict": "APPROVE",
+      "notes": "test: Good integration test coverage for extension artifact. Suggested milestone 0.4.0.",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:40:32Z",
+          "verdict": "APPROVE",
+          "notes": "test: Good integration test coverage for extension artifact. Suggested milestone 0.4.0."
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 25637,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-25T13:40:50Z",
+      "verdict": "APPROVE",
+      "notes": "Security hardening: AS2 MDN delivery address validation and credential scoping",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:40:50Z",
+          "verdict": "APPROVE",
+          "notes": "Security hardening: AS2 MDN delivery address validation and credential scoping"
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 25641,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-25T13:40:50Z",
+      "verdict": "APPROVE",
+      "notes": "Security fix: confine per-request AS2 signing keys to method-local variables",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:40:50Z",
+          "verdict": "APPROVE",
+          "notes": "Security fix: confine per-request AS2 signing keys to method-local variables"
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 25685,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-25T13:40:50Z",
+      "verdict": "APPROVE",
+      "notes": "Security fix: add muteException option to knative consumer, prevents stack trace disclosure",
+      "interactions": [
+        {
+          "at": "2026-08-25T13:40:50Z",
+          "verdict": "APPROVE",
+          "notes": "Security fix: add muteException option to knative consumer, prevents stack trace disclosure"
+        }
+      ],
+      "review_count": 1
     }
   ],
   "skipped_prs": [
@@ -2424,12 +2541,12 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-25T06:48:03Z",
+  "last_reviewed_updated_at": "2026-08-25T11:05:32Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-25T13:16:04Z",
+    "timestamp": "2026-08-25T13:41:39Z",
     "prs_checked": 3,
-    "reviews_posted": 3,
-    "tokens_estimate": 304000
+    "reviews_posted": 2,
+    "tokens_estimate": 72000
   }
 }
