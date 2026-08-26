@@ -2460,17 +2460,22 @@
       "number": 25685,
       "title": "",
       "author": "",
-      "reviewed_at": "2026-08-25T13:40:50Z",
+      "reviewed_at": "2026-08-26T08:23:15Z",
       "verdict": "APPROVE",
-      "notes": "Security fix: add muteException option to knative consumer, prevents stack trace disclosure",
+      "notes": "camel-knative muteException consumer option - security-aligned, consistent with other HTTP consumers",
       "interactions": [
         {
           "at": "2026-08-25T13:40:50Z",
           "verdict": "APPROVE",
           "notes": "Security fix: add muteException option to knative consumer, prevents stack trace disclosure"
+        },
+        {
+          "at": "2026-08-26T08:23:15Z",
+          "verdict": "APPROVE",
+          "notes": "camel-knative muteException consumer option - security-aligned, consistent with other HTTP consumers"
         }
       ],
-      "review_count": 1
+      "review_count": 2
     },
     {
       "number": 141,
@@ -2620,9 +2625,9 @@
       "number": 145,
       "title": "Fix #131: use effective POM models to detect managed dependency changes",
       "author": "gnodet",
-      "reviewed_at": "2026-08-26T08:20:29Z",
+      "reviewed_at": "2026-08-26T09:26:35Z",
       "verdict": "APPROVE",
-      "notes": "bug: Re-review - failSafe regression fixed in b0e592e. Both tests restored. Clean dead-code removal in follow-up commit.",
+      "notes": "bug: Re-review of 3 new commits (dead-code removal, test fixture fix, core algorithm upgrade to effective dep tree comparison). All clean. Low: missing explain-mode evidence on null effective model.",
       "interactions": [
         {
           "at": "2026-08-26T06:51:46Z",
@@ -2638,9 +2643,14 @@
           "at": "2026-08-26T08:20:29Z",
           "verdict": "APPROVE",
           "notes": "bug: Re-review - failSafe regression fixed in b0e592e. Both tests restored. Clean dead-code removal in follow-up commit."
+        },
+        {
+          "at": "2026-08-26T09:26:35Z",
+          "verdict": "APPROVE",
+          "notes": "bug: Re-review of 3 new commits (dead-code removal, test fixture fix, core algorithm upgrade to effective dep tree comparison). All clean. Low: missing explain-mode evidence on null effective model."
         }
       ],
-      "review_count": 3
+      "review_count": 4
     },
     {
       "number": 25726,
@@ -2841,6 +2851,38 @@
         }
       ],
       "review_count": 1
+    },
+    {
+      "number": 25754,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-26T08:23:15Z",
+      "verdict": "APPROVE",
+      "notes": "Backport revert SJMS connection recovery test for s390x to camel-4.22.x",
+      "interactions": [
+        {
+          "at": "2026-08-26T08:23:15Z",
+          "verdict": "APPROVE",
+          "notes": "Backport revert SJMS connection recovery test for s390x to camel-4.22.x"
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 25738,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-26T09:01:44Z",
+      "verdict": "APPROVE",
+      "notes": "CAMEL-24489: Fix TypeConversionException 'from type: null' for anonymous classes. Clean fix with typeName helper fallback.",
+      "interactions": [
+        {
+          "at": "2026-08-26T09:01:44Z",
+          "verdict": "APPROVE",
+          "notes": "CAMEL-24489: Fix TypeConversionException 'from type: null' for anonymous classes. Clean fix with typeName helper fallback."
+        }
+      ],
+      "review_count": 1
     }
   ],
   "skipped_prs": [
@@ -2946,12 +2988,12 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-26T08:14:44Z",
+  "last_reviewed_updated_at": "2026-08-26T09:20:07Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-26T08:20:35Z",
+    "timestamp": "2026-08-26T09:26:35Z",
     "prs_checked": 1,
     "reviews_posted": 1,
-    "tokens_estimate": 74786
+    "tokens_estimate": 111731
   }
 }
