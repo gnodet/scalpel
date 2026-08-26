@@ -2650,9 +2650,9 @@
       "number": 145,
       "title": "Fix #131: use effective POM models to detect managed dependency changes",
       "author": "gnodet",
-      "reviewed_at": "2026-08-26T14:53:15Z",
+      "reviewed_at": "2026-08-26T15:57:14Z",
       "verdict": "APPROVE",
-      "notes": "bug: 5th review - 2 new commits (tree comparison, reactor propagation). Sound design. Posted as COMMENT (own PR).",
+      "notes": "bug: 6th review - docs + property text-search replacement. Dead config code cleanup needed. Posted as COMMENT (own PR).",
       "interactions": [
         {
           "at": "2026-08-26T06:51:46Z",
@@ -2678,9 +2678,14 @@
           "at": "2026-08-26T14:53:15Z",
           "verdict": "APPROVE",
           "notes": "bug: 5th review - 2 new commits (tree comparison, reactor propagation). Sound design. Posted as COMMENT (own PR)."
+        },
+        {
+          "at": "2026-08-26T15:57:14Z",
+          "verdict": "APPROVE",
+          "notes": "bug: 6th review - docs + property text-search replacement. Dead config code cleanup needed. Posted as COMMENT (own PR)."
         }
       ],
-      "review_count": 5
+      "review_count": 6
     },
     {
       "number": 25726,
@@ -3212,10 +3217,10 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-26T14:44:48Z",
+  "last_reviewed_updated_at": "2026-08-26T15:51:14Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-26T14:53:15Z",
+    "timestamp": "2026-08-26T15:57:14Z",
     "prs_checked": 1,
     "reviews_posted": 1,
     "tokens_estimate": 0
