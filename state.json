@@ -2768,6 +2768,22 @@
       "verdict": "APPROVE",
       "reviewed_at": "2026-08-26T07:00:00Z",
       "notes": "Restored after concurrent overwrite: PQC KeyStore Java 25 fix backport to 4.22.x"
+    },
+    {
+      "number": 147,
+      "title": "Fix #94: consolidate the v2 schema, validate reports against it, document the compatibility policy",
+      "author": "paoloantinori",
+      "reviewed_at": "2026-08-26T08:00:05Z",
+      "verdict": "APPROVE",
+      "notes": "bug: Schema consolidation, validation tests, compatibility policy. 2 low nits (parseNumber accepts +, cast() duplication).",
+      "interactions": [
+        {
+          "at": "2026-08-26T08:00:05Z",
+          "verdict": "APPROVE",
+          "notes": "bug: Schema consolidation, validation tests, compatibility policy. 2 low nits (parseNumber accepts +, cast() duplication)."
+        }
+      ],
+      "review_count": 1
     }
   ],
   "skipped_prs": [
@@ -2873,12 +2889,12 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-26T07:31:21Z",
+  "last_reviewed_updated_at": "2026-08-26T07:53:45Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-26T07:45:03Z",
+    "timestamp": "2026-08-26T08:00:10Z",
     "prs_checked": 1,
-    "reviews_posted": 0,
-    "tokens_estimate": 80243
+    "reviews_posted": 1,
+    "tokens_estimate": 77877
   }
 }
