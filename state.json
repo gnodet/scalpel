@@ -2,9 +2,9 @@
   "version": "1.0",
   "project": "",
   "last_run": {
-    "timestamp": "2026-08-26T21:36:01Z",
-    "prs_checked": 0,
-    "reviews_posted": 0,
+    "timestamp": "2026-08-26T21:56:03Z",
+    "prs_checked": 2,
+    "reviews_posted": 2,
     "tokens_estimate": 0
   },
   "reviewed_prs": [
@@ -97,38 +97,48 @@
       "number": 149,
       "title": "Fix #123: javadoc for the published core API",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-26T19:35:03Z",
-      "verdict": "COMMENT",
-      "notes": "documentation: Thorough javadoc for core API. One gap: EXPLAIN constant missing javadoc (suggestion posted). Label should be documentation not bug.",
+      "reviewed_at": "2026-08-26T21:56:03Z",
+      "verdict": "APPROVE",
+      "notes": "documentation: 2nd review pass. EXPLAIN constant javadoc gap resolved. Class-level docs improved. All core API fully documented.",
       "interactions": [
         {
           "at": "2026-08-26T19:35:03Z",
           "verdict": "COMMENT",
           "notes": "documentation: Thorough javadoc for core API. One gap: EXPLAIN constant missing javadoc (suggestion posted). Label should be documentation not bug."
+        },
+        {
+          "at": "2026-08-26T21:56:03Z",
+          "verdict": "APPROVE",
+          "notes": "documentation: 2nd review pass. EXPLAIN constant javadoc gap resolved. Class-level docs improved. All core API fully documented."
         }
       ],
-      "review_count": 1
+      "review_count": 2
     },
     {
       "number": 150,
       "title": "Fix #86: troubleshooting guide for the two questions every adopter asks",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-26T20:10:02Z",
-      "verdict": "COMMENT",
-      "notes": "documentation: Excellent guide. One inaccuracy: report mode scope (trim+report \u2192 report only). Two minor formatting issues. 3/6 reviewer findings were false positives (features in concurrent PRs).",
+      "reviewed_at": "2026-08-26T21:56:03Z",
+      "verdict": "APPROVE",
+      "notes": "documentation: 2nd review pass. All 3 prior issues fixed: report mode scope, Scalpel prefix, POM error message. disableTriggers description also improved.",
       "interactions": [
         {
           "at": "2026-08-26T20:10:02Z",
           "verdict": "COMMENT",
           "notes": "documentation: Excellent guide. One inaccuracy: report mode scope (trim+report \u2192 report only). Two minor formatting issues. 3/6 reviewer findings were false positives (features in concurrent PRs)."
+        },
+        {
+          "at": "2026-08-26T21:56:03Z",
+          "verdict": "APPROVE",
+          "notes": "documentation: 2nd review pass. All 3 prior issues fixed: report mode scope, Scalpel prefix, POM error message. disableTriggers description also improved."
         }
       ],
-      "review_count": 1
+      "review_count": 2
     }
   ],
   "skipped_prs": [],
   "review_queue": [],
   "paused": false,
   "created_at": "2026-08-26T18:04:53Z",
-  "last_reviewed_updated_at": "2026-08-26T19:37:37Z"
+  "last_reviewed_updated_at": "2026-08-26T21:42:51Z"
 }
