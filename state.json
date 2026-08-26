@@ -2610,17 +2610,22 @@
       "number": 145,
       "title": "Fix #131: use effective POM models to detect managed dependency changes",
       "author": "gnodet",
-      "reviewed_at": "2026-08-26T06:51:46Z",
+      "reviewed_at": "2026-08-26T07:44:58Z",
       "verdict": "COMMENT",
-      "notes": "bug: Regresses #143 failSafe guard for ScalpelException. Low: AnalysisContext fields should be final.",
+      "notes": "bug: Re-review - failSafe guard for ScalpelException still not restored (regresses #143). New commit adds explain-mode and status reports. Low: AnalysisContext fields still not final.",
       "interactions": [
         {
           "at": "2026-08-26T06:51:46Z",
           "verdict": "COMMENT",
           "notes": "bug: Regresses #143 failSafe guard for ScalpelException. Low: AnalysisContext fields should be final."
+        },
+        {
+          "at": "2026-08-26T07:44:58Z",
+          "verdict": "COMMENT",
+          "notes": "bug: Re-review - failSafe guard for ScalpelException still not restored (regresses #143). New commit adds explain-mode and status reports. Low: AnalysisContext fields still not final."
         }
       ],
-      "review_count": 1
+      "review_count": 2
     },
     {
       "number": 25726,
@@ -2868,12 +2873,12 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-26T07:21:36Z",
+  "last_reviewed_updated_at": "2026-08-26T07:31:21Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-26T07:34:28Z",
+    "timestamp": "2026-08-26T07:45:03Z",
     "prs_checked": 1,
-    "reviews_posted": 1,
-    "tokens_estimate": 110128
+    "reviews_posted": 0,
+    "tokens_estimate": 80243
   }
 }
