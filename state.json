@@ -2650,9 +2650,9 @@
       "number": 145,
       "title": "Fix #131: use effective POM models to detect managed dependency changes",
       "author": "gnodet",
-      "reviewed_at": "2026-08-26T08:20:29Z",
+      "reviewed_at": "2026-08-26T13:51:31Z",
       "verdict": "APPROVE",
-      "notes": "bug: Re-review - failSafe regression fixed in b0e592e. Both tests restored. Clean dead-code removal in follow-up commit.",
+      "notes": "bug: Re-review - 8 new commits refining effective model comparison. Sound design, thorough tests, CI green. Posted as COMMENT (can't approve own PR).",
       "interactions": [
         {
           "at": "2026-08-26T06:51:46Z",
@@ -2668,9 +2668,14 @@
           "at": "2026-08-26T08:20:29Z",
           "verdict": "APPROVE",
           "notes": "bug: Re-review - failSafe regression fixed in b0e592e. Both tests restored. Clean dead-code removal in follow-up commit."
+        },
+        {
+          "at": "2026-08-26T13:51:31Z",
+          "verdict": "APPROVE",
+          "notes": "bug: Re-review - 8 new commits refining effective model comparison. Sound design, thorough tests, CI green. Posted as COMMENT (can't approve own PR)."
         }
       ],
-      "review_count": 3
+      "review_count": 4
     },
     {
       "number": 25726,
@@ -3186,12 +3191,12 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-25T13:40:07Z",
+  "last_reviewed_updated_at": "2026-08-26T13:29:36Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-26T13:44:48Z",
-    "prs_checked": 3,
-    "reviews_posted": 3,
+    "timestamp": "2026-08-26T13:51:31Z",
+    "prs_checked": 1,
+    "reviews_posted": 1,
     "tokens_estimate": 0
   }
 }
