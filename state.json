@@ -1,0 +1,14 @@
+{
+  "version": "1.0",
+  "project": "maveniverse/scalpel",
+  "project_name": "Scalpel",
+  "loop_type": "review-loop",
+  "last_run": null,
+  "reviewed_prs": [],
+  "skipped_prs": [],
+  "review_queue": [],
+  "active_failures": [],
+  "escalated": [],
+  "resolved": [],
+  "created_at": "2026-08-26T13:33:08Z"
+}
