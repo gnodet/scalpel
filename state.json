@@ -2895,17 +2895,22 @@
       "number": 147,
       "title": "Fix #94: consolidate the v2 schema, validate reports against it, document the compatibility policy",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-26T08:00:05Z",
+      "reviewed_at": "2026-08-26T17:44:55Z",
       "verdict": "APPROVE",
-      "notes": "bug: Schema consolidation, validation tests, compatibility policy. 2 low nits (parseNumber accepts +, cast() duplication).",
+      "notes": "bug: 2nd review - rebased with doc-only follow-up. Schema valid, drift guards in place. Approved.",
       "interactions": [
         {
           "at": "2026-08-26T08:00:05Z",
           "verdict": "APPROVE",
           "notes": "bug: Schema consolidation, validation tests, compatibility policy. 2 low nits (parseNumber accepts +, cast() duplication)."
+        },
+        {
+          "at": "2026-08-26T17:44:55Z",
+          "verdict": "APPROVE",
+          "notes": "bug: 2nd review - rebased with doc-only follow-up. Schema valid, drift guards in place. Approved."
         }
       ],
-      "review_count": 1
+      "review_count": 2
     },
     {
       "number": 25731,
@@ -3277,10 +3282,10 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-26T17:02:13Z",
+  "last_reviewed_updated_at": "2026-08-26T17:36:23Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-26T17:06:05Z",
+    "timestamp": "2026-08-26T17:44:55Z",
     "prs_checked": 1,
     "reviews_posted": 1,
     "tokens_estimate": 0
