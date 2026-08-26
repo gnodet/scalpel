@@ -716,9 +716,9 @@
       "number": 25554,
       "title": "CAMEL-24404: camel-base-engine: wrap consumer startup exceptions",
       "author": "mayurbm",
-      "reviewed_at": "2026-08-24T17:20:00Z",
+      "reviewed_at": "2026-08-26T08:00:38Z",
       "verdict": "COMMENT",
-      "notes": "NO_ACTION: CI not triggered (external contributor); davsclaus just posted CHANGES_REQUESTED review minutes ago",
+      "notes": "Re-review: consumer startup exception wrapping should be unconditional per established RouteService pattern",
       "interactions": [
         {
           "at": "2026-08-23T08:40:51Z",
@@ -729,9 +729,14 @@
           "at": "2026-08-24T17:20:00Z",
           "verdict": "COMMENT",
           "notes": "NO_ACTION: CI not triggered (external contributor); davsclaus just posted CHANGES_REQUESTED review minutes ago"
+        },
+        {
+          "at": "2026-08-26T08:00:38Z",
+          "verdict": "COMMENT",
+          "notes": "Re-review: consumer startup exception wrapping should be unconditional per established RouteService pattern"
         }
       ],
-      "review_count": 2
+      "review_count": 3
     },
     {
       "number": 25560,
@@ -1980,9 +1985,9 @@
       "number": 25507,
       "title": "",
       "author": "",
-      "reviewed_at": "2026-08-24T18:59:48Z",
+      "reviewed_at": "2026-08-26T08:00:38Z",
       "verdict": "COMMENT",
-      "notes": "NO_ACTION: CI not triggered (external contributor); davsclaus CHANGES_REQUESTED, author pushing new commits",
+      "notes": "GenAI observability Phase 3 - orphan service file, fragile reflection, classloader cache concern",
       "interactions": [
         {
           "at": "2026-08-24T13:34:26Z",
@@ -2008,9 +2013,14 @@
           "at": "2026-08-24T18:59:48Z",
           "verdict": "COMMENT",
           "notes": "NO_ACTION: CI not triggered (external contributor); davsclaus CHANGES_REQUESTED, author pushing new commits"
+        },
+        {
+          "at": "2026-08-26T08:00:38Z",
+          "verdict": "COMMENT",
+          "notes": "GenAI observability Phase 3 - orphan service file, fragile reflection, classloader cache concern"
         }
       ],
-      "review_count": 5
+      "review_count": 6
     },
     {
       "number": 25512,
@@ -2610,9 +2620,9 @@
       "number": 145,
       "title": "Fix #131: use effective POM models to detect managed dependency changes",
       "author": "gnodet",
-      "reviewed_at": "2026-08-26T07:44:58Z",
-      "verdict": "COMMENT",
-      "notes": "bug: Re-review - failSafe guard for ScalpelException still not restored (regresses #143). New commit adds explain-mode and status reports. Low: AnalysisContext fields still not final.",
+      "reviewed_at": "2026-08-26T08:20:29Z",
+      "verdict": "APPROVE",
+      "notes": "bug: Re-review - failSafe regression fixed in b0e592e. Both tests restored. Clean dead-code removal in follow-up commit.",
       "interactions": [
         {
           "at": "2026-08-26T06:51:46Z",
@@ -2623,9 +2633,14 @@
           "at": "2026-08-26T07:44:58Z",
           "verdict": "COMMENT",
           "notes": "bug: Re-review - failSafe guard for ScalpelException still not restored (regresses #143). New commit adds explain-mode and status reports. Low: AnalysisContext fields still not final."
+        },
+        {
+          "at": "2026-08-26T08:20:29Z",
+          "verdict": "APPROVE",
+          "notes": "bug: Re-review - failSafe regression fixed in b0e592e. Both tests restored. Clean dead-code removal in follow-up commit."
         }
       ],
-      "review_count": 2
+      "review_count": 3
     },
     {
       "number": 25726,
@@ -2718,8 +2733,21 @@
     {
       "number": 25740,
       "verdict": "APPROVE",
-      "reviewed_at": "2026-08-26T07:00:00Z",
-      "notes": "Restored after concurrent overwrite: IBM COS consumer dedup"
+      "reviewed_at": "2026-08-26T08:11:33Z",
+      "notes": "Re-review after update: IBM COS consumer in-progress dedup fix - davsclaus feedback addressed, APPROVE confirmed",
+      "interactions": [
+        {
+          "at": "2026-08-26T07:00:00Z",
+          "verdict": "APPROVE",
+          "notes": "Restored after concurrent overwrite: IBM COS consumer dedup"
+        },
+        {
+          "at": "2026-08-26T08:11:33Z",
+          "verdict": "APPROVE",
+          "notes": "Re-review after update: IBM COS consumer in-progress dedup fix - davsclaus feedback addressed, APPROVE confirmed"
+        }
+      ],
+      "review_count": 2
     },
     {
       "number": 25749,
@@ -2760,8 +2788,21 @@
     {
       "number": 25751,
       "verdict": "APPROVE",
-      "reviewed_at": "2026-08-26T07:00:00Z",
-      "notes": "Restored after concurrent overwrite: IBM COS CacheControl header typo fix"
+      "reviewed_at": "2026-08-26T08:11:33Z",
+      "notes": "Re-review after update: CacheControl header typo fix - APPROVE confirmed after regenerated files update",
+      "interactions": [
+        {
+          "at": "2026-08-26T07:00:00Z",
+          "verdict": "APPROVE",
+          "notes": "Restored after concurrent overwrite: IBM COS CacheControl header typo fix"
+        },
+        {
+          "at": "2026-08-26T08:11:33Z",
+          "verdict": "APPROVE",
+          "notes": "Re-review after update: CacheControl header typo fix - APPROVE confirmed after regenerated files update"
+        }
+      ],
+      "review_count": 2
     },
     {
       "number": 25753,
@@ -2781,6 +2822,22 @@
           "at": "2026-08-26T08:00:05Z",
           "verdict": "APPROVE",
           "notes": "bug: Schema consolidation, validation tests, compatibility policy. 2 low nits (parseNumber accepts +, cast() duplication)."
+        }
+      ],
+      "review_count": 1
+    },
+    {
+      "number": 25731,
+      "title": "",
+      "author": "",
+      "reviewed_at": "2026-08-26T08:08:54Z",
+      "verdict": "COMMENT",
+      "notes": "NO_ACTION: operator own PR (gnodet) - Cache EIP with read-through caching",
+      "interactions": [
+        {
+          "at": "2026-08-26T08:08:54Z",
+          "verdict": "COMMENT",
+          "notes": "NO_ACTION: operator own PR (gnodet) - Cache EIP with read-through caching"
         }
       ],
       "review_count": 1
@@ -2889,12 +2946,12 @@
     }
   ],
   "operator_login": "gnodet",
-  "last_reviewed_updated_at": "2026-08-26T07:53:45Z",
+  "last_reviewed_updated_at": "2026-08-26T08:14:44Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-26T08:00:10Z",
+    "timestamp": "2026-08-26T08:20:35Z",
     "prs_checked": 1,
     "reviews_posted": 1,
-    "tokens_estimate": 77877
+    "tokens_estimate": 74786
   }
 }
