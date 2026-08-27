@@ -2,9 +2,9 @@
   "version": "1.0",
   "project": "",
   "last_run": {
-    "timestamp": "2026-08-27T09:42:19Z",
-    "prs_checked": 1,
-    "reviews_posted": 1,
+    "timestamp": "2026-08-27T09:49:50Z",
+    "prs_checked": 2,
+    "reviews_posted": 2,
     "tokens_estimate": 0
   },
   "reviewed_prs": [
@@ -33,9 +33,9 @@
       "number": 129,
       "title": "Fix #82: make swallowed IO errors fail toward affected instead of under-building",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-27T03:00:02Z",
+      "reviewed_at": "2026-08-27T09:49:50Z",
       "verdict": "APPROVE",
-      "notes": "bug: Re-review after rebase. Clean 3-commit structure, all prior concerns addressed, CI green.",
+      "notes": "bug: Re-review after new commit dd53cb2. Distinct TRANSITIVE_DEPENDENCY_UNRESOLVED reason string added.",
       "interactions": [
         {
           "at": "2026-08-26T18:12:58Z",
@@ -51,25 +51,35 @@
           "at": "2026-08-27T03:00:02Z",
           "verdict": "APPROVE",
           "notes": "bug: Re-review after rebase. Clean 3-commit structure, all prior concerns addressed, CI green."
+        },
+        {
+          "at": "2026-08-27T09:49:50Z",
+          "verdict": "APPROVE",
+          "notes": "bug: Re-review after new commit dd53cb2. Distinct TRANSITIVE_DEPENDENCY_UNRESOLVED reason string added."
         }
       ],
-      "review_count": 3
+      "review_count": 4
     },
     {
       "number": 136,
       "title": "Fix #95: shallow-clone test coverage, shallow detection, actionable warnings",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-26T18:13:00Z",
+      "reviewed_at": "2026-08-27T09:49:50Z",
       "verdict": "APPROVE",
-      "notes": "bug: Shallow clone detection+warnings, comprehensive tests. CI green.",
+      "notes": "bug: Re-review after new commit 0f28df7. warnIfShallow added to catch blocks. Merge conflict with main noted.",
       "interactions": [
         {
           "at": "2026-08-26T18:13:00Z",
           "verdict": "APPROVE",
           "notes": "bug: Shallow clone detection+warnings, comprehensive tests. CI green."
+        },
+        {
+          "at": "2026-08-27T09:49:50Z",
+          "verdict": "APPROVE",
+          "notes": "bug: Re-review after new commit 0f28df7. warnIfShallow added to catch blocks. Merge conflict with main noted."
         }
       ],
-      "review_count": 1
+      "review_count": 2
     },
     {
       "number": 135,
@@ -171,5 +181,5 @@
   "review_queue": [],
   "paused": false,
   "created_at": "2026-08-26T18:04:53Z",
-  "last_reviewed_updated_at": "2026-08-27T07:59:56Z"
+  "last_reviewed_updated_at": "2026-08-27T09:42:34Z"
 }
