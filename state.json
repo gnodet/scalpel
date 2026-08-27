@@ -2,9 +2,9 @@
   "version": "1.0",
   "project": "",
   "last_run": {
-    "timestamp": "2026-08-27T16:58:17Z",
-    "prs_checked": 0,
-    "reviews_posted": 0,
+    "timestamp": "2026-08-27T16:59:50Z",
+    "prs_checked": 1,
+    "reviews_posted": 1,
     "tokens_estimate": 0
   },
   "reviewed_prs": [
@@ -196,11 +196,27 @@
         }
       ],
       "review_count": 1
+    },
+    {
+      "number": 153,
+      "title": "Fix #98: cache scalpel regex patterns and cap match input length",
+      "author": "paoloantinori",
+      "reviewed_at": "2026-08-27T16:59:50Z",
+      "verdict": "APPROVE",
+      "notes": "bug: Security fix for ReDoS via unbounded regex matching. Caches compiled patterns and caps input length. TDD approach, all CI green.",
+      "interactions": [
+        {
+          "at": "2026-08-27T16:59:50Z",
+          "verdict": "APPROVE",
+          "notes": "bug: Security fix for ReDoS via unbounded regex matching. Caches compiled patterns and caps input length. TDD approach, all CI green."
+        }
+      ],
+      "review_count": 1
     }
   ],
   "skipped_prs": [],
   "review_queue": [],
   "paused": false,
   "created_at": "2026-08-26T18:04:53Z",
-  "last_reviewed_updated_at": "2026-08-27T14:44:31Z"
+  "last_reviewed_updated_at": "2026-08-27T16:53:21Z"
 }
