@@ -2,9 +2,9 @@
   "version": "1.0",
   "project": "",
   "last_run": {
-    "timestamp": "2026-08-28T10:37:35Z",
-    "prs_checked": 0,
-    "reviews_posted": 0,
+    "timestamp": "2026-08-28T11:00:40Z",
+    "prs_checked": 1,
+    "reviews_posted": 1,
     "tokens_estimate": 0
   },
   "reviewed_prs": [
@@ -33,9 +33,9 @@
       "number": 129,
       "title": "Fix #82: make swallowed IO errors fail toward affected instead of under-building",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-27T17:31:30Z",
+      "reviewed_at": "2026-08-28T11:00:40Z",
       "verdict": "APPROVE",
-      "notes": "bug: Re-review after rebase. Conservative error-handling correct. Evidence string inconsistency and rebase ancestry noted.",
+      "notes": "Re-review: 3 new commits clean \u2014 schema drift guard, test fix for CodeRabbit feedback, merge from main",
       "interactions": [
         {
           "at": "2026-08-26T18:12:58Z",
@@ -61,9 +61,14 @@
           "at": "2026-08-27T17:31:30Z",
           "verdict": "APPROVE",
           "notes": "bug: Re-review after rebase. Conservative error-handling correct. Evidence string inconsistency and rebase ancestry noted."
+        },
+        {
+          "at": "2026-08-28T11:00:40Z",
+          "verdict": "APPROVE",
+          "notes": "Re-review: 3 new commits clean \u2014 schema drift guard, test fix for CodeRabbit feedback, merge from main"
         }
       ],
-      "review_count": 5
+      "review_count": 6
     },
     {
       "number": 136,
@@ -255,5 +260,5 @@
   "review_queue": [],
   "paused": false,
   "created_at": "2026-08-26T18:04:53Z",
-  "last_reviewed_updated_at": "2026-08-28T07:11:53Z"
+  "last_reviewed_updated_at": "2026-08-28T10:52:45Z"
 }
