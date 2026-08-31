@@ -188,17 +188,22 @@
       "number": 160,
       "title": "docs: split README into docs directory (#119)",
       "author": "paoloantinori",
-      "reviewed_at": "2026-08-31T09:29:22Z",
+      "reviewed_at": "2026-08-31T14:31:49Z",
       "verdict": "COMMENT",
-      "notes": "documentation: README split into 5 docs files. 5 confirmed findings (missing category in example, git fetch syntax, jq fromJSON bug, stale mode description, gitlab code blocks). 1 false positive removed.",
+      "notes": "Re-review: previous 6 findings all addressed. One new finding: filename mismatch in impacted-log CI recipe (done < impacted-log should be done < scalpel-impacted.log).",
       "interactions": [
         {
           "at": "2026-08-31T09:29:22Z",
           "verdict": "COMMENT",
           "notes": "documentation: README split into 5 docs files. 5 confirmed findings (missing category in example, git fetch syntax, jq fromJSON bug, stale mode description, gitlab code blocks). 1 false positive removed."
+        },
+        {
+          "at": "2026-08-31T14:31:49Z",
+          "verdict": "COMMENT",
+          "notes": "Re-review: previous 6 findings all addressed. One new finding: filename mismatch in impacted-log CI recipe (done < impacted-log should be done < scalpel-impacted.log)."
         }
       ],
-      "review_count": 1
+      "review_count": 2
     },
     {
       "number": 152,
@@ -332,7 +337,7 @@
   "last_reviewed_updated_at": "2026-08-30T13:57:10Z",
   "review_queue": [],
   "last_run": {
-    "timestamp": "2026-08-31T13:01:18Z",
+    "timestamp": "2026-08-31T14:31:49Z",
     "prs_checked": 1,
     "reviews_posted": 1,
     "tokens_estimate": 0
