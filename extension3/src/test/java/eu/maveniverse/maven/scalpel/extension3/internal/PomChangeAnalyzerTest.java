@@ -2498,6 +2498,9 @@ class PomChangeAnalyzerTest {
     void analyzeChanges_unreadableResourceFileMarksChildAsAffected() throws Exception {
         // When a filtered resource file cannot be read (IOException),
         // the child should be conservatively marked as affected.
+        assumeTrue(
+                tempDir.getFileSystem().supportedFileAttributeViews().contains("posix"),
+                "POSIX file permissions not supported on this filesystem (e.g. Windows NTFS)");
         Path root = setupReactorRoot();
         List<MavenProject> projects = createReactorWithPropertyUsage(root);
 
@@ -2550,6 +2553,9 @@ class PomChangeAnalyzerTest {
     void analyzeChanges_unreadableResourceDirectoryMarksChildAsAffected() throws Exception {
         // When a filtered resource subdirectory cannot be listed (IOException on
         // DirectoryStream), the child should be conservatively marked as affected.
+        assumeTrue(
+                tempDir.getFileSystem().supportedFileAttributeViews().contains("posix"),
+                "POSIX file permissions not supported on this filesystem (e.g. Windows NTFS)");
         Path root = setupReactorRoot();
         List<MavenProject> projects = createReactorWithPropertyUsage(root);
 
