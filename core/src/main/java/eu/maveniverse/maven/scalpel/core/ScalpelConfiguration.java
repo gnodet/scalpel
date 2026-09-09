@@ -79,6 +79,14 @@ public final class ScalpelConfiguration {
     public static final String EXPLAIN = PREFIX + "explain";
 
     /**
+     * System property {@code scalpel.verifyFullBuild}: run the full build, compute the would-be
+     * decision, and fail the build if any module Scalpel would have skipped fails, naming the
+     * modules and why they were judged skippable (#101). Forces the shadow observation instead
+     * of reactor-modifying modes. Default: {@code false}.
+     */
+    public static final String VERIFY_FULL_BUILD = PREFIX + "verifyFullBuild";
+
+    /**
      * System property {@code scalpel.disableOnBranch}: comma-separated regex patterns; Scalpel is
      * disabled when the current branch matches any of them. Default: none.
      */
@@ -263,6 +271,7 @@ public final class ScalpelConfiguration {
             FAIL_SAFE,
             MODE,
             EXPLAIN,
+            VERIFY_FULL_BUILD,
             DISABLE_ON_BRANCH,
             DISABLE_ON_BASE_BRANCH,
             EXCLUDE_PATHS,
@@ -309,6 +318,7 @@ public final class ScalpelConfiguration {
     private final boolean failSafe;
     private final String mode;
     private final boolean explain;
+    private final boolean verifyFullBuild;
     private final String reportFile;
     private final long maxResourceFileSize;
     private final List<String> excludeChanges;
@@ -341,6 +351,7 @@ public final class ScalpelConfiguration {
             boolean failSafe,
             String mode,
             boolean explain,
+            boolean verifyFullBuild,
             String reportFile,
             long maxResourceFileSize,
             List<String> excludeChanges,
@@ -371,6 +382,7 @@ public final class ScalpelConfiguration {
         this.failSafe = failSafe;
         this.mode = mode;
         this.explain = explain;
+        this.verifyFullBuild = verifyFullBuild;
         this.reportFile = reportFile;
         this.maxResourceFileSize = maxResourceFileSize;
         this.excludeChanges = excludeChanges;
@@ -434,6 +446,8 @@ public final class ScalpelConfiguration {
                     + ", " + MODE_SKIP_TESTS + ", " + MODE_REPORT + ", " + MODE_SHADOW);
         }
         boolean explain = parseStrictBoolean(EXPLAIN, resolve(system, user, EXPLAIN, "false"));
+        boolean verifyFullBuild =
+                parseStrictBoolean(VERIFY_FULL_BUILD, resolve(system, user, VERIFY_FULL_BUILD, "false"));
         String reportFile = resolve(system, user, REPORT_FILE, DEFAULT_REPORT_FILE);
         String maxResourceFileSizeStr = resolve(system, user, MAX_RESOURCE_FILE_SIZE, null);
         long maxResourceFileSize = DEFAULT_MAX_RESOURCE_FILE_SIZE;
@@ -481,6 +495,7 @@ public final class ScalpelConfiguration {
                 failSafe,
                 mode,
                 explain,
+                verifyFullBuild,
                 reportFile,
                 maxResourceFileSize,
                 excludeChanges,
@@ -727,6 +742,59 @@ public final class ScalpelConfiguration {
     /** Returns whether per-module decision evidence is emitted (explain mode). Default: {@code false}. */
     public boolean isExplain() {
         return explain;
+    }
+
+    /**
+     * Returns whether the full build runs under observation and fails when a module Scalpel
+     * would have skipped fails (verify mode, #101). Default: {@code false}.
+     */
+    public boolean isVerifyFullBuild() {
+        return verifyFullBuild;
+    }
+
+    /**
+     * Returns a stable fingerprint of the configuration properties that shape the trim
+     * decision, for {@link ScalpelReport#computeDecisionId}. Output-shaping properties
+     * (reportFile, impactedLog, mode, failSafe, explain, ...) are deliberately excluded:
+     * the decision identity must not change because someone moved the report.
+     */
+    public String decisionFingerprint() {
+        StringBuilder sb = new StringBuilder();
+        appendFingerprintPart(sb, "baseBranch", baseBranch);
+        appendFingerprintPart(sb, "head", head);
+        appendFingerprintPart(sb, "alsoMake", String.valueOf(alsoMake));
+        appendFingerprintPart(sb, "alsoMakeDependents", String.valueOf(alsoMakeDependents));
+        appendFingerprintPart(sb, "fullBuildTriggers", sortedJoin(fullBuildTriggers));
+        appendFingerprintPart(sb, "excludePaths", sortedJoin(excludePaths));
+        appendFingerprintPart(sb, "includePaths", sortedJoin(includePaths));
+        appendFingerprintPart(sb, "disableTriggers", sortedJoin(disableTriggers));
+        appendFingerprintPart(sb, "forceBuildModules", sortedJoin(forceBuildModules));
+        appendFingerprintPart(sb, "maxResourceFileSize", String.valueOf(maxResourceFileSize));
+        appendFingerprintPart(sb, "uncommitted", String.valueOf(uncommitted));
+        appendFingerprintPart(sb, "untracked", String.valueOf(untracked));
+        return sb.toString();
+    }
+
+    private static String sortedJoin(List<String> values) {
+        List<String> sorted = new ArrayList<>(values);
+        sorted.sort(java.util.Comparator.naturalOrder());
+        return String.join(",", sorted);
+    }
+
+    private static void appendFingerprintPart(StringBuilder sb, String name, String value) {
+        // Values are hex-encoded: list-valued properties legally contain the structural
+        // delimiters (';' in paths, '=' in patterns), and a raw concatenation let two
+        // distinct resolved configurations collide into one fingerprint (#177 review).
+        sb.append(name).append('=').append(hex(value == null ? "" : value)).append(';');
+    }
+
+    private static String hex(String value) {
+        byte[] bytes = value.getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        StringBuilder sb = new StringBuilder(bytes.length * 2);
+        for (byte b : bytes) {
+            sb.append("%02x".formatted(b));
+        }
+        return sb.toString();
     }
 
     /** Returns the operating mode: {@code trim}, {@code skip-tests}, {@code report}, or {@code shadow}. Default: {@code trim}. */

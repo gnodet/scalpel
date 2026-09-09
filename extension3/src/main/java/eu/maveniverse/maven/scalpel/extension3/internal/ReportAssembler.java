@@ -48,6 +48,7 @@ class ReportAssembler {
             throws MavenExecutionException {
         ScalpelReport.Builder builder = ScalpelReport.builder()
                 .baseBranch(config.getBaseBranch())
+                .decisionId(ctx.decisionId)
                 .fullBuildTriggered(false)
                 .changedFiles(ctx.changedFiles)
                 .changedProperties(ctx.changedProperties)
@@ -82,7 +83,7 @@ class ReportAssembler {
     void writeStatusReport(ScalpelConfiguration config, Path reactorRoot, String status, String reason) {
         String baseBranch = config.getBaseBranch();
         try {
-            if (config.isModeShadow()) {
+            if (config.isModeShadow() || config.isVerifyFullBuild()) {
                 writeShadowStatus(reactorRoot, status, reason);
             }
             ScalpelReport report = ScalpelReport.builder()
@@ -119,16 +120,21 @@ class ReportAssembler {
     }
 
     void writeFullBuildReport(
-            ScalpelConfiguration config, Path reactorRoot, String triggerFile, Set<String> changedFiles)
+            ScalpelConfiguration config,
+            Path reactorRoot,
+            String triggerFile,
+            Set<String> changedFiles,
+            String decisionId)
             throws MavenExecutionException {
         ScalpelReport report = ScalpelReport.builder()
                 .baseBranch(config.getBaseBranch())
+                .decisionId(decisionId)
                 .fullBuildTriggered(true)
                 .triggerFile(triggerFile)
                 .changedFiles(changedFiles)
                 .build();
         try {
-            if (config.isModeShadow()) {
+            if (config.isModeShadow() || config.isVerifyFullBuild()) {
                 writeShadowStatus(reactorRoot, "skipped", "full build triggered by " + triggerFile);
             }
             report.writeToFile(reactorRoot, config.getReportFile());

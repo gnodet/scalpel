@@ -15,11 +15,13 @@ import eu.maveniverse.maven.scalpel.core.ChangeDetectionResult;
 import eu.maveniverse.maven.scalpel.core.ScalpelConfiguration;
 import eu.maveniverse.maven.scalpel.core.ScalpelCore;
 import eu.maveniverse.maven.scalpel.core.ScalpelException;
+import eu.maveniverse.maven.scalpel.core.ScalpelReport;
 import eu.maveniverse.maven.scalpel.core.Timings;
 import eu.maveniverse.maven.scalpel.core.Version;
 import java.nio.file.Path;
 import java.nio.file.PathMatcher;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -103,7 +105,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             List<String> selectedProjects = session.getRequest().getSelectedProjects();
             if (selectedProjects != null && !selectedProjects.isEmpty()) {
                 logger.info("Scalpel {} disabled due to -pl project selection", version);
-                if (config.isModeShadow()) {
+                if (monitoredRun(config)) {
                     reportAssembler.writeShadowStatus(
                             session.getRequest()
                                     .getMultiModuleProjectDirectory()
@@ -137,7 +139,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             // Detect changes
             ChangeDetectionResult result = scalpelCore.detectChanges(reactorRoot, config, allPomPaths, timings);
             if (result == null) {
-                if (config.isPassiveMode()) {
+                if (passiveRun(config)) {
                     String skipReason = scalpelCore.getLastDetectionSkipReason();
                     if (skipReason != null) {
                         reportAssembler.writeStatusReport(config, reactorRoot, "skipped", skipReason);
@@ -154,7 +156,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                 if (config.isBuildAllIfNoChanges()) {
                     logger.info("Scalpel: No changes detected, building all modules (buildAllIfNoChanges=true)");
                 }
-                if (config.isPassiveMode()) {
+                if (passiveRun(config)) {
                     reportAssembler.writeStatusReport(config, reactorRoot, "skipped", "no changes detected");
                 }
                 return;
@@ -164,7 +166,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
 
             // Check disable triggers
             if (changedFileClassifier.matchesDisableTrigger(changedFiles, config)) {
-                if (config.isPassiveMode()) {
+                if (passiveRun(config)) {
                     reportAssembler.writeStatusReport(
                             config, reactorRoot, "skipped", "disabled by disableTriggers match");
                 }
@@ -175,7 +177,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             changedFiles = changedFileClassifier.filterExcludedPaths(changedFiles, config);
             if (changedFiles.isEmpty()) {
                 logger.info("Scalpel: All changed files excluded by path filters, building all modules");
-                if (config.isPassiveMode()) {
+                if (passiveRun(config)) {
                     reportAssembler.writeStatusReport(
                             config, reactorRoot, "skipped", "all changed files excluded by path filters");
                 }
@@ -185,8 +187,13 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             // Check full build triggers
             String triggerFile = changedFileClassifier.findFullBuildTrigger(changedFiles, config);
             if (triggerFile != null) {
-                if (config.isPassiveMode()) {
-                    reportAssembler.writeFullBuildReport(config, reactorRoot, triggerFile, changedFiles);
+                if (passiveRun(config)) {
+                    reportAssembler.writeFullBuildReport(
+                            config,
+                            reactorRoot,
+                            triggerFile,
+                            changedFiles,
+                            decisionIdFor(result, config, reactorRoot, allProjects));
                 }
                 return;
             }
@@ -253,7 +260,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                     if (config.isFailSafe()) {
                         logger.warn("Scalpel: Error analyzing POM changes, building all modules: {}", e.getMessage());
                         logger.debug("POM analysis error details", e);
-                        if (config.isPassiveMode()) {
+                        if (passiveRun(config)) {
                             reportAssembler.writeFailedStatusReport(config, reactorRoot, "error analyzing POM changes");
                         }
                         return;
@@ -308,12 +315,14 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                     changedManagedPluginGAs,
                     unmatchedPomPaths,
                     timings,
-                    analysisStartNano);
+                    analysisStartNano,
+                    result);
 
             if (handleNoAffectedModules(
                     directlyAffected.isEmpty() && oldEffectiveModels.isEmpty(),
                     "no modules affected by changes",
                     cctx)) {
+                installEmptyDecisionMonitor(session, config, reactorRoot, allProjects, result, changedFiles);
                 return;
             }
 
@@ -355,6 +364,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                     directlyAffected.isEmpty() && transitivelyAffected.isEmpty(),
                     "no modules affected by changes",
                     cctx)) {
+                installEmptyDecisionMonitor(session, config, reactorRoot, allProjects, result, changedFiles);
                 return;
             }
 
@@ -383,6 +393,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                 }
 
                 if (handleNoAffectedModules(allAffected.isEmpty(), "no modules match includePaths filters", cctx)) {
+                    installEmptyDecisionMonitor(session, config, reactorRoot, allProjects, result, changedFiles);
                     return;
                 }
             }
@@ -392,7 +403,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                 impactedLogWriter.writeImpactedLog(config, normalizedRoot, allAffected);
             }
 
-            if (config.isPassiveMode()) {
+            if (passiveRun(config)) {
                 // Compute upstream/downstream categorization for report enrichment
                 TrimResult trimResult = null;
                 if (!directlyAffected.isEmpty()) {
@@ -406,6 +417,90 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                 }
                 if (trimResult != null && config.isExplain()) {
                     mergeTrimReasons(evidence, trimResult);
+                }
+
+                // The would-be trim decision for shadow and verify runs (#92, #101), and the
+                // stable decision identity (#101) every report of this run carries. Computed
+                // before the report is written so the report and the shadow document quote
+                // the same id for the same run. The decision uses the same ReactorTrimmer
+                // call trim mode runs on the same inputs, so shadow and trim decisions agree
+                // by construction; when nothing is transitively affected, the report branch
+                // above already computed that exact set.
+                boolean verify = config.isVerifyFullBuild();
+                // The root aggregator relativizes to the empty string; every decision-side
+                // module name is normalized to "." (like the impacted log, #84) so all
+                // modes hash and print the same names.
+                java.util.function.Function<MavenProject, String> moduleKey =
+                        project -> moduleKeyOf(reactorRoot, project);
+                Set<String> wouldHaveBuilt = null;
+                Set<String> wouldHaveSkipped = null;
+                String decisionId;
+                if (config.isModeShadow() || verify) {
+                    TrimResult decision;
+                    if (trimResult != null && allAffected.equals(directlyAffected)) {
+                        decision = trimResult;
+                    } else {
+                        timings.start(Timings.PHASE_TRIM);
+                        try {
+                            decision = reactorTrimmer.computeBuildSet(
+                                    allAffected, testOnlyModules, session.getProjectDependencyGraph(), config);
+                        } finally {
+                            timings.stop(Timings.PHASE_TRIM);
+                        }
+                    }
+                    wouldHaveBuilt = new LinkedHashSet<>();
+                    List<MavenProject> decisionBuildSet = decision.getBuildSet();
+                    if (!includeMatchers.isEmpty()) {
+                        Set<MavenProject> affected = allAffected;
+                        decisionBuildSet = new ArrayList<>(decisionBuildSet);
+                        decisionBuildSet.removeIf(project -> !affected.contains(project)
+                                && !decision.getUpstreamOnly().contains(project)
+                                && !ChangedFileClassifier.matchesIncludePaths(project, includeMatchers, reactorRoot));
+                    }
+                    for (MavenProject project : decisionBuildSet) {
+                        wouldHaveBuilt.add(moduleKey.apply(project));
+                    }
+                    wouldHaveSkipped = new LinkedHashSet<>();
+                    for (MavenProject project : allProjects) {
+                        String path = moduleKey.apply(project);
+                        if (!wouldHaveBuilt.contains(path)) {
+                            wouldHaveSkipped.add(path);
+                        }
+                    }
+                    decisionId = ScalpelReport.computeDecisionId(
+                            result.getMergeBaseId(), result.getHeadId(), config.decisionFingerprint(), wouldHaveBuilt);
+                    if (verify && (config.isModeTrim() || config.isModeSkipTests())) {
+                        logger.warn(
+                                "Scalpel: verifyFullBuild forces a full build with the shadow observation;"
+                                        + " overriding mode={}",
+                                config.getMode());
+                    }
+                } else {
+                    // Plain report run: compute the decision identity from the same set
+                    // shadow/verify would use (allAffected + trim + includePaths filter)
+                    // so that report-mode and shadow/verify-mode produce the same
+                    // decisionId for the same changeset (#177).
+                    TrimResult reportDecision;
+                    if (trimResult != null && allAffected.equals(directlyAffected)) {
+                        reportDecision = trimResult;
+                    } else {
+                        timings.start(Timings.PHASE_TRIM);
+                        try {
+                            reportDecision = reactorTrimmer.computeBuildSet(
+                                    allAffected, testOnlyModules, session.getProjectDependencyGraph(), config);
+                        } finally {
+                            timings.stop(Timings.PHASE_TRIM);
+                        }
+                    }
+                    List<MavenProject> reportBuildSet = reportDecision.getBuildSet();
+                    if (!includeMatchers.isEmpty()) {
+                        Set<MavenProject> affected = allAffected;
+                        reportBuildSet = new ArrayList<>(reportBuildSet);
+                        reportBuildSet.removeIf(project -> !affected.contains(project)
+                                && !reportDecision.getUpstreamOnly().contains(project)
+                                && !ChangedFileClassifier.matchesIncludePaths(project, includeMatchers, reactorRoot));
+                    }
+                    decisionId = decisionIdFor(result, config, reactorRoot, reportBuildSet);
                 }
 
                 reportAssembler.writeReport(
@@ -423,6 +518,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                                 .transitivelyAffected(transitivelyAffected)
                                 .evidence(evidence)
                                 .trimResult(trimResult)
+                                .decisionId(decisionId)
                                 .build(),
                         timings,
                         analysisStartNano);
@@ -434,61 +530,39 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                     }
                     logExplainDecisions(allProjects, reportedModules, evidence);
                 }
-                if (config.isModeShadow()) {
-                    TrimResult decision;
-                    if (trimResult != null && allAffected.equals(directlyAffected)) {
-                        decision = trimResult;
-                    } else {
-                        timings.start(Timings.PHASE_TRIM);
-                        try {
-                            decision = reactorTrimmer.computeBuildSet(
-                                    allAffected, testOnlyModules, session.getProjectDependencyGraph(), config);
-                        } finally {
-                            timings.stop(Timings.PHASE_TRIM);
-                        }
+                if (wouldHaveBuilt != null) {
+                    // Shadow mode (#92) and verify mode (#101): hand the would-be decision to
+                    // a monitor wrapped around the session's ExecutionListener; the full build
+                    // below runs unmodified while per-module wall-clock and failures are
+                    // recorded, and at session end the join is written to
+                    // target/scalpel-shadow.json plus one JSONL history line. In verify mode
+                    // the monitor additionally fails the build when a would-have-skipped
+                    // module fails, naming each module and its skip reason.
+                    Map<String, String> skipReasons = new LinkedHashMap<>();
+                    for (String skipped : wouldHaveSkipped) {
+                        skipReasons.put(skipped, ScalpelReport.SKIP_REASON_NOT_AFFECTED);
                     }
-                    Set<String> wouldHaveBuilt = new LinkedHashSet<>();
-                    java.util.function.Function<MavenProject, String> moduleKey = project -> {
-                        String path = ChangedFileClassifier.relativePath(normalizedRoot, project);
-                        // The root aggregator relativizes to the empty string; report it as
-                        // "." like the impacted log does (#84) so every module has a name.
-                        return path.isEmpty() ? "." : path;
-                    };
-                    List<MavenProject> decisionBuildSet = decision.getBuildSet();
-                    if (!includeMatchers.isEmpty()) {
-                        Set<MavenProject> affected = allAffected;
-                        decisionBuildSet = new ArrayList<>(decisionBuildSet);
-                        decisionBuildSet.removeIf(project -> !affected.contains(project)
-                                && !decision.getUpstreamOnly().contains(project)
-                                && !ChangedFileClassifier.matchesIncludePaths(
-                                        project, includeMatchers, normalizedRoot));
-                    }
-                    for (MavenProject project : decisionBuildSet) {
-                        wouldHaveBuilt.add(moduleKey.apply(project));
-                    }
-                    Set<String> wouldHaveSkipped = new LinkedHashSet<>();
-                    for (MavenProject project : allProjects) {
-                        String path = moduleKey.apply(project);
-                        if (!wouldHaveBuilt.contains(path)) {
-                            wouldHaveSkipped.add(path);
-                        }
-                    }
+                    ShadowDecision decision = verify
+                            ? ShadowDecision.verifying(wouldHaveBuilt, wouldHaveSkipped, skipReasons, decisionId)
+                            : ShadowDecision.measuring(wouldHaveBuilt, wouldHaveSkipped, decisionId);
                     session.getRequest()
                             .setExecutionListener(new ShadowBuildMonitor(
                                     session.getRequest().getExecutionListener(),
                                     reactorRoot,
-                                    wouldHaveBuilt,
-                                    wouldHaveSkipped,
                                     Version.version(),
                                     config.getBaseBranch(),
                                     changedFiles,
                                     System::nanoTime,
-                                    moduleKey));
+                                    moduleKey,
+                                    decision));
                     logger.info(
-                            "Scalpel: Shadow mode observing the full build: would build {} of {} modules, would skip {}",
+                            "Scalpel: {} observing the full build: would build {} of {} modules, would skip {}"
+                                    + " (decisionId {})",
+                            verify ? "Verify mode" : "Shadow mode",
                             wouldHaveBuilt.size(),
                             allProjects.size(),
-                            wouldHaveSkipped.size());
+                            wouldHaveSkipped.size(),
+                            decisionId);
                 }
                 return;
             }
@@ -535,6 +609,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                     logExplainDecisions(allProjects, new LinkedHashSet<>(buildSet), evidence);
                 }
                 // Write the same JSON report as report mode
+                String trimDecisionId = decisionIdFor(result, config, reactorRoot, buildSet);
                 reportAssembler.writeReport(
                         config,
                         normalizedRoot,
@@ -550,6 +625,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                                 .transitivelyAffected(transitivelyAffected)
                                 .trimResult(trimResult)
                                 .filteredBuildSet(buildSet)
+                                .decisionId(trimDecisionId)
                                 .build(),
                         timings,
                         analysisStartNano);
@@ -559,7 +635,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             if (config.isFailSafe()) {
                 logger.warn("Scalpel: {}, building all modules", e.getMessage());
                 logger.debug("ScalpelException details", e);
-                if (config.isModeShadow()) {
+                if (monitoredRun(config)) {
                     reportAssembler.writeShadowStatus(reactorRoot, "failed", e.getMessage());
                 }
                 return;
@@ -569,7 +645,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             if (config.isFailSafe()) {
                 logger.warn("Scalpel: Unexpected error, building all modules: {}", e.getMessage());
                 logger.debug("Unexpected error details", e);
-                if (config.isPassiveMode()) {
+                if (passiveRun(config)) {
                     reportAssembler.writeFailedStatusReport(config, reactorRoot, "unexpected error: " + e.getMessage());
                 }
                 return;
@@ -593,7 +669,8 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             Set<String> changedManagedPluginGAs,
             Set<String> unmatchedPomPaths,
             Timings timings,
-            long analysisStartNano) {}
+            long analysisStartNano,
+            ChangeDetectionResult result) {}
 
     /**
      * Handles the triplicated 'no affected modules' pattern. Returns {@code true} if the
@@ -605,10 +682,12 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             return false;
         }
         logger.info("Scalpel: No modules affected by changes");
-        if (cctx.config().isPassiveMode()) {
-            if (cctx.config().isModeShadow()) {
+        if (passiveRun(cctx.config())) {
+            if (monitoredRun(cctx.config())) {
                 reportAssembler.writeShadowStatus(cctx.reactorRoot(), "skipped", reason);
             }
+            String decisionId =
+                    decisionIdFor(cctx.result(), cctx.config(), cctx.reactorRoot(), List.<MavenProject>of());
             reportAssembler.writeReport(
                     cctx.config(),
                     cctx.reactorRoot(),
@@ -618,7 +697,8 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                             cctx.changedProperties(),
                             cctx.changedManagedDepGAs(),
                             cctx.changedManagedPluginGAs(),
-                            cctx.unmatchedPomPaths()),
+                            cctx.unmatchedPomPaths(),
+                            decisionId),
                     cctx.timings(),
                     cctx.analysisStartNano());
         } else if (cctx.config().isModeSkipTests()) {
@@ -705,5 +785,83 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
 
     static boolean isSafeImpactedLogPath(String path) {
         return ImpactedLogWriter.isSafeImpactedLogPath(path);
+    }
+
+    /** True when the run leaves the reactor untouched and writes report artifacts. */
+    private static boolean passiveRun(ScalpelConfiguration config) {
+        return config.isPassiveMode() || config.isVerifyFullBuild();
+    }
+
+    /** True when the session gets a ShadowBuildMonitor installed (shadow or verify). */
+    private static boolean monitoredRun(ScalpelConfiguration config) {
+        return config.isModeShadow() || config.isVerifyFullBuild();
+    }
+
+    /**
+     * In verify mode with an empty build decision (nothing affected), installs a
+     * {@link ShadowBuildMonitor} so that if any module fails during the full build the false
+     * negative is detected (#177). Shadow-only mode skips the monitor — there is nothing
+     * to measure and the "skipped" status document covers the shadow contract.
+     */
+    private void installEmptyDecisionMonitor(
+            MavenSession session,
+            ScalpelConfiguration config,
+            Path reactorRoot,
+            List<MavenProject> allProjects,
+            ChangeDetectionResult result,
+            Set<String> changedFiles) {
+        if (!config.isVerifyFullBuild()) {
+            return;
+        }
+        java.util.function.Function<MavenProject, String> moduleKey = project -> moduleKeyOf(reactorRoot, project);
+        Set<String> wouldHaveBuilt = Set.of();
+        Set<String> wouldHaveSkipped = new LinkedHashSet<>();
+        Map<String, String> skipReasons = new LinkedHashMap<>();
+        for (MavenProject project : allProjects) {
+            String path = moduleKey.apply(project);
+            wouldHaveSkipped.add(path);
+            skipReasons.put(path, ScalpelReport.SKIP_REASON_NOT_AFFECTED);
+        }
+        String decisionId = decisionIdFor(result, config, reactorRoot, List.<MavenProject>of());
+        ShadowDecision decision = ShadowDecision.verifying(wouldHaveBuilt, wouldHaveSkipped, skipReasons, decisionId);
+        session.getRequest()
+                .setExecutionListener(new ShadowBuildMonitor(
+                        session.getRequest().getExecutionListener(),
+                        reactorRoot,
+                        Version.version(),
+                        config.getBaseBranch(),
+                        changedFiles,
+                        System::nanoTime,
+                        moduleKey,
+                        decision));
+        logger.info(
+                "Scalpel: Verify mode observing the full build with empty decision:"
+                        + " would skip all {} modules (decisionId {})",
+                allProjects.size(),
+                decisionId);
+    }
+
+    /** Decision-side module name: relative path, "." for the reactor root (#84, #101). */
+    private static String moduleKeyOf(Path reactorRoot, MavenProject project) {
+        String path = ChangedFileClassifier.relativePath(reactorRoot, project);
+        return path.isEmpty() ? "." : path;
+    }
+
+    /**
+     * The stable decision identity for the given build-set projects. Every mode collects
+     * module names through {@link #moduleKeyOf}, so the same decision produces the same id
+     * whether it was computed by trim, report, shadow or verify (#101).
+     */
+    private static String decisionIdFor(
+            ChangeDetectionResult result,
+            ScalpelConfiguration config,
+            Path reactorRoot,
+            Collection<MavenProject> projects) {
+        List<String> paths = new ArrayList<>();
+        for (MavenProject project : projects) {
+            paths.add(moduleKeyOf(reactorRoot, project));
+        }
+        return ScalpelReport.computeDecisionId(
+                result.getMergeBaseId(), result.getHeadId(), config.decisionFingerprint(), paths);
     }
 }
