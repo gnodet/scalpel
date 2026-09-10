@@ -38,7 +38,7 @@ The tradeoff: Scalpel has fewer knobs. If Scalpel's analysis is wrong, your esca
 
 **Explain mode.** `-Dscalpel.explain=true` adds per-module decision evidence to the report: each `affectedModules` entry gets an `evidence` array naming the exact file, property, dependency, or graph relationship that put it in the build set. Diagnose surprising results without guessing.
 
-**Periodic correctness verification.** `-Dscalpel.verifyFullBuild=true` runs the full build under shadow observation and fails it if any module Scalpel would have skipped actually fails, naming the module, its skip reason, and the `decisionId`. A stable `decisionId` (SHA-256 of the merge-base, head, config, and build set) is emitted in every mode so failures are quotable and correlatable. GIB has no equivalent.
+**Periodic correctness verification.** `-Dscalpel.verifyFullBuild=true` runs the full build under shadow observation and fails it if any module Scalpel would have skipped actually fails, naming the module, its skip reason, and the `decisionId`. A stable `decisionId` (SHA-256 of the merge-base, head, config, and build set) is emitted whenever a decision completes so failures are quotable and correlatable. GIB has no equivalent.
 
 **Fine-grained POM change filtering.** `scalpel.excludeChanges` and `scalpel.includeChanges` accept glob patterns over a normalized change-path scheme (`properties/<name>`, `dependencies/<ga>`, `managedDependencies/<ga>`, etc.). Volatile properties (`build.timestamp`, `project.build.outputTimestamp`) are excluded by default. GIB users who reached for `includePathsMatching` to suppress noisy POM changes can express that intent precisely here instead.
 
