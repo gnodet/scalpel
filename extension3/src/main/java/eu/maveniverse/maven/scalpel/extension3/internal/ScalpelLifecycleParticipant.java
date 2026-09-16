@@ -126,6 +126,10 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
 
         Timings timings = new Timings();
         long analysisStartNano = System.nanoTime();
+        // Detection state, hoisted so the failure handlers below can report what was
+        // actually detected before the failure (#186: fail-safe reports keep the data).
+        ChangeDetectionResult result = null;
+        Set<String> changedFiles = null;
         try {
             // Collect ALL reactor POM paths
             Set<String> allPomPaths = new LinkedHashSet<>();
@@ -136,28 +140,65 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             }
 
             // Detect changes
-            ChangeDetectionResult result = scalpelCore.detectChanges(reactorRoot, config, allPomPaths, timings);
+            result = scalpelCore.detectChanges(reactorRoot, config, allPomPaths, timings);
             if (result == null) {
                 if (passiveRun(config)) {
                     String skipReason = scalpelCore.getLastDetectionSkipReason();
+                    String nullDetectionId =
+                            ScalpelReport.computeDecisionId(null, null, config.decisionFingerprint(), List.of());
                     if (skipReason != null) {
-                        reportAssembler.writeStatusReport(config, reactorRoot, "skipped", skipReason);
+                        reportAssembler.writeStatusReport(
+                                config,
+                                reactorRoot,
+                                "skipped",
+                                skipReason,
+                                Set.of(),
+                                null,
+                                nullDetectionId,
+                                timings,
+                                analysisStartNano);
                     } else {
                         reportAssembler.writeStatusReport(
-                                config, reactorRoot, "failed", "change detection did not run (see build log)");
+                                config,
+                                reactorRoot,
+                                "failed",
+                                "change detection did not run (see build log)",
+                                Set.of(),
+                                null,
+                                nullDetectionId,
+                                timings,
+                                analysisStartNano);
                     }
                 }
                 return;
             }
 
-            Set<String> changedFiles = result.getChangedFiles();
+            changedFiles = result.getChangedFiles();
             if (changedFiles.isEmpty()) {
+                // No changes at all: buildAllIfNoChanges selects between a full build and an
+                // EMPTY one (#199). Passive modes (report/shadow/verify) still observe the full
+                // reactor and write the status report; trim and skip-tests share the
+                // empty-build-set behaviour.
+                if (passiveRun(config)) {
+                    logger.info("Scalpel: No changes detected");
+                    reportAssembler.writeStatusReport(
+                            config,
+                            reactorRoot,
+                            "skipped",
+                            "no changes detected",
+                            Set.of(),
+                            null,
+                            decisionIdFor(result, config, reactorRoot, allProjects),
+                            timings,
+                            analysisStartNano);
+                    return;
+                }
                 if (config.isBuildAllIfNoChanges()) {
                     logger.info("Scalpel: No changes detected, building all modules (buildAllIfNoChanges=true)");
+                    return;
                 }
-                if (passiveRun(config)) {
-                    reportAssembler.writeStatusReport(config, reactorRoot, "skipped", "no changes detected");
-                }
+                logger.info("Scalpel: No changes detected, trimming reactor to empty (buildAllIfNoChanges=false)");
+                trimReactorToEmpty(session, allProjects);
                 return;
             }
 
@@ -166,10 +207,19 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             PathFilters pathFilters = new PathFilters(config);
 
             // Check disable triggers
-            if (pathFilters.matchesDisableTrigger(changedFiles)) {
+            String disableTriggerFile = pathFilters.findDisableTrigger(changedFiles);
+            if (disableTriggerFile != null) {
                 if (passiveRun(config)) {
                     reportAssembler.writeStatusReport(
-                            config, reactorRoot, "skipped", "disabled by disableTriggers match");
+                            config,
+                            reactorRoot,
+                            "skipped",
+                            "disabled by disableTriggers match",
+                            changedFiles,
+                            disableTriggerFile,
+                            decisionIdFor(result, config, reactorRoot, allProjects),
+                            timings,
+                            analysisStartNano);
                 }
                 return;
             }
@@ -177,11 +227,31 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
             // Filter out excluded paths
             changedFiles = pathFilters.filterExcludedPaths(changedFiles);
             if (changedFiles.isEmpty()) {
-                logger.info("Scalpel: All changed files excluded by path filters, building all modules");
+                // Everything detected was excluded: buildAllIfNoChanges selects between a
+                // full build and an EMPTY one on this branch, mirroring the no-changes gate
+                // above (#184, #199).
                 if (passiveRun(config)) {
+                    logger.info("Scalpel: All changed files excluded by path filters");
                     reportAssembler.writeStatusReport(
-                            config, reactorRoot, "skipped", "all changed files excluded by path filters");
+                            config,
+                            reactorRoot,
+                            "skipped",
+                            "all changed files excluded by path filters",
+                            changedFiles,
+                            null,
+                            decisionIdFor(result, config, reactorRoot, allProjects),
+                            timings,
+                            analysisStartNano);
+                    return;
                 }
+                if (config.isBuildAllIfNoChanges()) {
+                    logger.info("Scalpel: All changed files excluded by path filters, building all modules"
+                            + " (buildAllIfNoChanges=true)");
+                    return;
+                }
+                logger.info("Scalpel: All changed files excluded by path filters, trimming reactor to empty"
+                        + " (buildAllIfNoChanges=false)");
+                trimReactorToEmpty(session, allProjects);
                 return;
             }
 
@@ -264,7 +334,19 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                         logger.warn("Scalpel: Error analyzing POM changes, building all modules: {}", e.getMessage());
                         logger.debug("POM analysis error details", e);
                         if (passiveRun(config)) {
-                            reportAssembler.writeFailedStatusReport(config, reactorRoot, "error analyzing POM changes");
+                            // Detection completed before the analysis failure (result is
+                            // non-null here: the null check at the top of the try returned
+                            // already): the report keeps the detected files and the
+                            // full-fallback decision id.
+                            reportAssembler.writeFailedStatusReport(
+                                    config,
+                                    reactorRoot,
+                                    "error analyzing POM changes",
+                                    changedFiles,
+                                    null,
+                                    decisionIdFor(result, config, reactorRoot, allProjects),
+                                    timings,
+                                    analysisStartNano);
                         }
                         return;
                     } else {
@@ -630,7 +712,19 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                 logger.warn("Scalpel: Unexpected error, building all modules: {}", e.getMessage());
                 logger.debug("Unexpected error details", e);
                 if (passiveRun(config)) {
-                    reportAssembler.writeFailedStatusReport(config, reactorRoot, "unexpected error: " + e.getMessage());
+                    boolean detected = result != null;
+                    reportAssembler.writeFailedStatusReport(
+                            config,
+                            reactorRoot,
+                            "unexpected error: " + e.getMessage(),
+                            detected ? changedFiles : Set.of(),
+                            null,
+                            detected
+                                    ? decisionIdFor(result, config, reactorRoot, allProjects)
+                                    : ScalpelReport.computeDecisionId(
+                                            null, null, config.decisionFingerprint(), List.of()),
+                            timings,
+                            analysisStartNano);
                 }
                 return;
             }
@@ -774,6 +868,33 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
 
     static boolean isSafeImpactedLogPath(String path) {
         return ImpactedLogWriter.isSafeImpactedLogPath(path);
+    }
+
+    /**
+     * Trims the reactor to an empty project list and preserves a non-null current project.
+     *
+     * <p>When {@link MavenSession#setProjects(java.util.List)} is called with an empty list,
+     * Maven resets its internal {@code currentProject} ThreadLocal to an empty one, making
+     * {@link MavenSession#getCurrentProject()} return {@code null}. Extensions that run in
+     * {@code afterProjectsRead} after Scalpel (e.g. {@code kr.motd.maven:os-maven-plugin})
+     * may call {@code getCurrentProject()} and NPE on a null result (#204).
+     *
+     * <p>To prevent this, we call {@link MavenSession#setCurrentProject(MavenProject)} with
+     * the execution-root project after clearing the list, so downstream extensions still see
+     * a valid (though non-buildable) current project.
+     */
+    private static void trimReactorToEmpty(MavenSession session, List<MavenProject> allProjects) {
+        session.setProjects(new ArrayList<>());
+        // Restore a non-null currentProject so extensions calling getCurrentProject() after us
+        // (e.g. os-maven-plugin) do not NPE. Pick the execution root; fall back to the first
+        // project in the pre-trim list when no explicit root is marked.
+        MavenProject executionRoot = allProjects.stream()
+                .filter(MavenProject::isExecutionRoot)
+                .findFirst()
+                .orElseGet(() -> allProjects.isEmpty() ? null : allProjects.get(0));
+        if (executionRoot != null) {
+            session.setCurrentProject(executionRoot);
+        }
     }
 
     /** True when the run leaves the reactor untouched and writes report artifacts. */

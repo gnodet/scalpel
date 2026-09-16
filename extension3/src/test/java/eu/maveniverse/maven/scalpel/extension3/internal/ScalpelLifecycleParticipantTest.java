@@ -17,8 +17,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -1965,6 +1967,9 @@ class ScalpelLifecycleParticipantTest {
                 json.contains("\"excludedUpstreamCount\": 1"),
                 "module-p is an upstream prerequisite of the transitive module in the final decision");
         assertTrue(
+                json.contains("\"reactorModuleCount\": 3"),
+                "reactorModuleCount must equal allProjects.size() (parent + module-p + module-x)");
+        assertTrue(
                 json.contains("\"buildSetSize\": 2"),
                 "buildSetSize must describe the build set the decisionId was computed over (module-x plus module-p)");
     }
@@ -3472,11 +3477,13 @@ class ScalpelLifecycleParticipantTest {
 
         participant.afterProjectsRead(session);
 
+        verify(session, never()).setProjects(anyList()); // passive mode must not trim the reactor
         assertTrue(Files.exists(reportFile), "Report file should still exist (overwritten, not deleted)");
         String json = new String(Files.readAllBytes(reportFile), StandardCharsets.UTF_8);
         assertTrue(json.contains("\"status\": \"skipped\""), "Overwritten report should carry skipped status");
         assertTrue(json.contains("no changes detected"), "Overwritten report should carry accurate reason");
         assertFalse(json.contains("STALE-REPORT"), "Stale content must not survive the bail-out");
+        verify(session, never()).setProjects(any());
     }
 
     /**
@@ -3515,6 +3522,7 @@ class ScalpelLifecycleParticipantTest {
 
         participant.afterProjectsRead(session);
 
+        verify(session, never()).setProjects(anyList()); // passive mode must not trim the reactor
         assertTrue(Files.exists(reportFile), "Report file should still exist (overwritten, not deleted)");
         String json = new String(Files.readAllBytes(reportFile), StandardCharsets.UTF_8);
         assertTrue(json.contains("\"status\": \"skipped\""), "Overwritten report should carry skipped status");
@@ -3697,23 +3705,108 @@ class ScalpelLifecycleParticipantTest {
     }
 
     @Test
-    void noChanges_withBuildAllIfNoChanges() throws Exception {
+    void noChanges_defaultTrimsToEmptyBuildSet() throws Exception {
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+
+        String parentPom = simpleParentPom("module-a", "module-b");
+        writePom(root, "pom.xml", parentPom);
+        writePom(root, "module-a/pom.xml", simpleChildPom("module-a"));
+        writePom(root, "module-b/pom.xml", simpleChildPom("module-b"));
+
+        MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
+        parentProject.getModel().setPackaging("pom");
+        parentProject.setExecutionRoot(true);
+        MavenProject moduleA =
+                createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", simpleChildPom("module-a"));
+        moduleA.setParent(parentProject);
+        MavenProject moduleB =
+                createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", simpleChildPom("module-b"));
+        moduleB.setParent(parentProject);
+
+        List<MavenProject> allProjects = List.of(parentProject, moduleA, moduleB);
+
+        // No changed files at all; with the default buildAllIfNoChanges=false the reactor
+        // trims to EMPTY instead of building all (#199)
+        when(scalpelCore.detectChanges(any(), any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(new LinkedHashSet<String>(), new HashMap<String, byte[]>()));
+        setupEmptyDependencyResolution();
+
+        MavenSession session = createSimpleSession(root, allProjects, "trim");
+
+        participant.afterProjectsRead(session);
+
+        ArgumentCaptor<List<MavenProject>> captor = ArgumentCaptor.forClass(List.class);
+        verify(session).setProjects(captor.capture());
+        assertTrue(
+                captor.getValue().isEmpty(),
+                "with no changes detected and buildAllIfNoChanges=false, the build set must be empty, got: "
+                        + captor.getValue());
+        // setCurrentProject must be called with the execution root so downstream extensions
+        // (e.g. os-maven-plugin) do not NPE on getCurrentProject() returning null (#204)
+        verify(session).setCurrentProject(parentProject);
+        assertFalse(Files.exists(root.resolve("target/scalpel-report.json")));
+    }
+
+    @Test
+    void noChanges_defaultTrimsToEmptyBuildSet_fallsBackToFirstProjectWhenNoExecutionRoot() throws Exception {
+        // Verifies that when no project has isExecutionRoot()==true, trimReactorToEmpty
+        // falls back to the first project in allProjects to set as currentProject (#204).
         Path root = tempDir.resolve("project");
         Files.createDirectories(root);
 
         String parentPom = simpleParentPom("module-a");
         writePom(root, "pom.xml", parentPom);
-        String moduleAPom = simpleChildPom("module-a");
-        writePom(root, "module-a/pom.xml", moduleAPom);
+        writePom(root, "module-a/pom.xml", simpleChildPom("module-a"));
 
         MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
         parentProject.getModel().setPackaging("pom");
-        MavenProject moduleA = createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", moduleAPom);
+        // Deliberately do NOT call setExecutionRoot(true) — exercises the fallback path
+        MavenProject moduleA =
+                createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", simpleChildPom("module-a"));
         moduleA.setParent(parentProject);
 
         List<MavenProject> allProjects = List.of(parentProject, moduleA);
 
-        // No changed files
+        when(scalpelCore.detectChanges(any(), any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(new LinkedHashSet<String>(), new HashMap<String, byte[]>()));
+        setupEmptyDependencyResolution();
+
+        MavenSession session = createSimpleSession(root, allProjects, "trim");
+
+        participant.afterProjectsRead(session);
+
+        ArgumentCaptor<List<MavenProject>> captor = ArgumentCaptor.forClass(List.class);
+        verify(session).setProjects(captor.capture());
+        assertTrue(captor.getValue().isEmpty(), "build set must be empty");
+        // With no execution root marked, the first project (parentProject) is used as fallback
+        verify(session).setCurrentProject(parentProject);
+        assertFalse(Files.exists(root.resolve("target/scalpel-report.json")));
+    }
+
+    @Test
+    void noChanges_withBuildAllIfNoChanges_true_buildsAll() throws Exception {
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+
+        String parentPom = simpleParentPom("module-a", "module-b");
+        writePom(root, "pom.xml", parentPom);
+        writePom(root, "module-a/pom.xml", simpleChildPom("module-a"));
+        writePom(root, "module-b/pom.xml", simpleChildPom("module-b"));
+
+        MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
+        parentProject.getModel().setPackaging("pom");
+        MavenProject moduleA =
+                createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", simpleChildPom("module-a"));
+        moduleA.setParent(parentProject);
+        MavenProject moduleB =
+                createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", simpleChildPom("module-b"));
+        moduleB.setParent(parentProject);
+
+        List<MavenProject> allProjects = List.of(parentProject, moduleA, moduleB);
+
+        // No changed files; with buildAllIfNoChanges=true the reactor must NOT be trimmed
+        // (paired with the default-false test that trims to empty).
         when(scalpelCore.detectChanges(any(), any(), any(), any()))
                 .thenReturn(new ChangeDetectionResult(new LinkedHashSet<String>(), new HashMap<String, byte[]>()));
         setupEmptyDependencyResolution();
@@ -3724,41 +3817,93 @@ class ScalpelLifecycleParticipantTest {
         participant.afterProjectsRead(session);
 
         // Should return early, building all (no trimming applied)
-        Path reportFile = root.resolve("target/scalpel-report.json");
-        assertFalse(Files.exists(reportFile));
+        verify(session, never()).setProjects(anyList());
+        assertFalse(Files.exists(root.resolve("target/scalpel-report.json")));
     }
 
     @Test
-    void allFilesExcludedByPathFilters_buildsAll() throws Exception {
+    void allFilesExcludedByPathFilters_defaultTrimsToEmptyBuildSet() throws Exception {
         Path root = tempDir.resolve("project");
         Files.createDirectories(root);
 
-        String parentPom = simpleParentPom("module-a");
+        String parentPom = simpleParentPom("module-a", "module-b");
         writePom(root, "pom.xml", parentPom);
-        String moduleAPom = simpleChildPom("module-a");
-        writePom(root, "module-a/pom.xml", moduleAPom);
+        writePom(root, "module-a/pom.xml", simpleChildPom("module-a"));
+        writePom(root, "module-b/pom.xml", simpleChildPom("module-b"));
 
         MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
         parentProject.getModel().setPackaging("pom");
-        MavenProject moduleA = createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", moduleAPom);
+        parentProject.setExecutionRoot(true);
+        MavenProject moduleA =
+                createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", simpleChildPom("module-a"));
         moduleA.setParent(parentProject);
+        MavenProject moduleB =
+                createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", simpleChildPom("module-b"));
+        moduleB.setParent(parentProject);
 
-        List<MavenProject> allProjects = List.of(parentProject, moduleA);
+        List<MavenProject> allProjects = List.of(parentProject, moduleA, moduleB);
 
-        // Only .md files changed
+        // Every changed file is excluded: nothing relevant changed, so with the default
+        // buildAllIfNoChanges=false the reactor trims to EMPTY instead of building all (#184)
         Set<String> changedFiles = new LinkedHashSet<>();
-        changedFiles.add("README.md");
-        changedFiles.add("CHANGELOG.md");
+        changedFiles.add("docs/guide.md");
         when(scalpelCore.detectChanges(any(), any(), any(), any()))
                 .thenReturn(new ChangeDetectionResult(changedFiles, new HashMap<String, byte[]>()));
         setupEmptyDependencyResolution();
 
         MavenSession session = createSimpleSession(root, allProjects, "trim");
-        session.getSystemProperties().setProperty("scalpel.excludePaths", "*.md");
+        session.getSystemProperties().setProperty("scalpel.excludePaths", "docs/**");
 
         participant.afterProjectsRead(session);
 
-        // All files excluded → builds all modules (no trimming)
+        ArgumentCaptor<List<MavenProject>> captor = ArgumentCaptor.forClass(List.class);
+        verify(session).setProjects(captor.capture());
+        assertTrue(
+                captor.getValue().isEmpty(),
+                "with only excluded files changed and buildAllIfNoChanges=false, the build set must be empty, got: "
+                        + captor.getValue());
+        // setCurrentProject must be called with the execution root so downstream extensions
+        // (e.g. os-maven-plugin) do not NPE on getCurrentProject() returning null (#204)
+        verify(session).setCurrentProject(parentProject);
+        assertFalse(Files.exists(root.resolve("target/scalpel-report.json")));
+    }
+
+    @Test
+    void allFilesExcludedByPathFilters_withBuildAllTrue_buildsAll() throws Exception {
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+
+        String parentPom = simpleParentPom("module-a", "module-b");
+        writePom(root, "pom.xml", parentPom);
+        writePom(root, "module-a/pom.xml", simpleChildPom("module-a"));
+        writePom(root, "module-b/pom.xml", simpleChildPom("module-b"));
+
+        MavenProject parentProject = createProject("com.example", "parent", "1.0", root, "pom.xml", parentPom);
+        parentProject.getModel().setPackaging("pom");
+        MavenProject moduleA =
+                createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", simpleChildPom("module-a"));
+        moduleA.setParent(parentProject);
+        MavenProject moduleB =
+                createProject("com.example", "module-b", "1.0", root, "module-b/pom.xml", simpleChildPom("module-b"));
+        moduleB.setParent(parentProject);
+
+        List<MavenProject> allProjects = List.of(parentProject, moduleA, moduleB);
+
+        // Only docs files changed, all excluded; with buildAllIfNoChanges=true the reactor
+        // must NOT be trimmed (paired with the default-false test that trims to empty).
+        Set<String> changedFiles = new LinkedHashSet<>();
+        changedFiles.add("docs/guide.md");
+        when(scalpelCore.detectChanges(any(), any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(changedFiles, new HashMap<String, byte[]>()));
+        setupEmptyDependencyResolution();
+
+        MavenSession session = createSimpleSession(root, allProjects, "trim");
+        session.getSystemProperties().setProperty("scalpel.excludePaths", "docs/**");
+        session.getSystemProperties().setProperty("scalpel.buildAllIfNoChanges", "true");
+
+        participant.afterProjectsRead(session);
+
+        verify(session, never()).setProjects(anyList());
         Path reportFile = root.resolve("target/scalpel-report.json");
         assertFalse(Files.exists(reportFile));
     }
@@ -4795,6 +4940,62 @@ class ScalpelLifecycleParticipantTest {
         }
         root.setChildren(children);
         return root;
+    }
+
+    @Test
+    void unexpectedErrorAfterDetection_reportKeepsDetectedChangedFiles() throws Exception {
+        // #186 review: detection completed before the failure, so the fail-safe report
+        // must carry the detected files (previously Set.of()) and the full-fallback
+        // decision id computed from the real result, not the null-git one.
+        Path root = tempDir.resolve("project");
+        Files.createDirectories(root);
+        writePom(root, "pom.xml", simpleParentPom("module-a"));
+        writePom(root, "module-a/pom.xml", simpleChildPom("module-a"));
+        MavenProject parentProject =
+                createProject("com.example", "parent", "1.0", root, "pom.xml", simpleParentPom("module-a"));
+        parentProject.getModel().setPackaging("pom");
+        MavenProject moduleA =
+                createProject("com.example", "module-a", "1.0", root, "module-a/pom.xml", simpleChildPom("module-a"));
+        moduleA.setParent(parentProject);
+
+        Set<String> changedFiles = new LinkedHashSet<>();
+        changedFiles.add("module-a/src/main/java/Foo.java");
+        when(scalpelCore.detectChanges(any(), any(), any(), any()))
+                .thenReturn(new ChangeDetectionResult(changedFiles, new HashMap<String, byte[]>()));
+        MavenSession session = createSimpleSession(root, List.of(parentProject, moduleA), "report");
+        // Force an unexpected error AFTER detection: ReactorTrimmer.computeBuildSet calls
+        // graph.getSortedProjects() outside any internal catch, so the throw escapes to
+        // the outer handler with detection already completed.
+        when(session.getProjectDependencyGraph().getSortedProjects()).thenThrow(new RuntimeException("boom"));
+
+        runCapturingStdErr(() -> participant.afterProjectsRead(session));
+
+        Path reportFile = root.resolve("target/scalpel-report.json");
+        assertTrue(Files.exists(reportFile), "fail-safe report must be written");
+        String json = Files.readString(reportFile);
+        assertTrue(
+                json.contains("module-a/src/main/java/Foo.java"),
+                "the report must carry the detected changed files, got: " + json);
+        assertTrue(json.contains("unexpected error"), "status reason preserved: " + json);
+        assertTrue(json.contains("\"changedFiles\""), "changedFiles array present");
+        // The decision id must come from the DETECTED result (full-fallback build set),
+        // not from the null-git form: a regression back to computeDecisionId(null, null,
+        // ...) must fail here, not only change the digest silently.
+        String reportedId = java.util.regex.Pattern.compile("\"decisionId\": \"([0-9a-f]+)\"")
+                .matcher(json)
+                .results()
+                .findFirst()
+                .orElseThrow(() -> new AssertionError("decisionId missing: " + json))
+                .group(1);
+        String nullGitId = eu.maveniverse.maven.scalpel.core.ScalpelReport.computeDecisionId(
+                null, null, configFromSession(session).decisionFingerprint(), java.util.List.of());
+        org.junit.jupiter.api.Assertions.assertNotEquals(
+                nullGitId, reportedId, "the id must differ from the null-git form");
+    }
+
+    private eu.maveniverse.maven.scalpel.core.ScalpelConfiguration configFromSession(MavenSession session) {
+        return eu.maveniverse.maven.scalpel.core.ScalpelConfiguration.fromProperties(
+                session.getSystemProperties(), session.getUserProperties());
     }
 
     private MavenSession createSimpleSession(Path root, List<MavenProject> allProjects, String mode) {
