@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -311,7 +312,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                                 reactorRoot,
                                 config.isExplain(),
                                 new PomChangeAnalyzer.ModelResolutionContext(
-                                        session.getSystemProperties(),
+                                        leanSystemProperties(session.getSystemProperties()),
                                         session.getUserProperties(),
                                         session.getRepositorySession(),
                                         allProjects.get(0).getRemoteProjectRepositories()),
@@ -949,6 +950,46 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                         + " would skip all {} modules (decisionId {})",
                 allProjects.size(),
                 decisionId);
+    }
+
+    /**
+     * Creates a lean copy of Maven session system properties for POM effective model building.
+     * <p>
+     * Maven's {@code session.getSystemProperties()} aggregates JVM system properties,
+     * environment variables (mapped as {@code env.*}), and other Maven internals.
+     * On large CI environments (GitHub Actions, Jenkins), the {@code env.*} entries alone
+     * can total thousands of key-value pairs with very large values (e.g. {@code PATH}
+     * on Windows can exceed several kilobytes).
+     * <p>
+     * When Scalpel builds effective models for large reactors (hundreds of modules), each
+     * call to {@link org.apache.maven.model.building.DefaultModelBuildingRequest#setSystemProperties}
+     * copies the full Properties object — and Maven calls this recursively for every BOM
+     * import. Passing the full live ConcurrentHashMap-backed Properties to hundreds of model
+     * builds causes severe GC pressure and potential {@link OutOfMemoryError}.
+     * <p>
+     * This method filters out {@code env.*} entries (environment variable mappings), which
+     * are almost never referenced in POM property interpolation ({@code ${env.VAR}} is
+     * extremely rare in POM files). Standard JVM system properties ({@code java.*},
+     * {@code os.*}, {@code user.*}, {@code file.*}, etc.) are preserved — these are the
+     * properties POMs actually use for profile activation and interpolation.
+     *
+     * @param systemProperties the live session system properties (may be a large
+     *                         {@code ConcurrentHashMap}-backed object)
+     * @return a lean snapshot copy with {@code env.*} entries removed
+     */
+    static Properties leanSystemProperties(Properties systemProperties) {
+        if (systemProperties == null) {
+            return null;
+        }
+        Properties lean = new Properties();
+        synchronized (systemProperties) {
+            for (String key : systemProperties.stringPropertyNames()) {
+                if (!key.startsWith("env.")) {
+                    lean.setProperty(key, systemProperties.getProperty(key));
+                }
+            }
+        }
+        return lean;
     }
 
     /** Decision-side module name: relative path, "." for the reactor root (#84, #101). */

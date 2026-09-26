@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -135,6 +136,50 @@ class ScalpelLifecycleParticipantTest {
                 new ReactorTrimmer(),
                 dependenciesResolver);
     }
+
+    // ─── leanSystemProperties ────────────────────────────────────────────────
+
+    @Test
+    void leanSystemProperties_removesEnvEntries() {
+        java.util.Properties input = new java.util.Properties();
+        input.setProperty("java.version", "21");
+        input.setProperty("os.name", "Linux");
+        input.setProperty("env.PATH", "/usr/bin:/bin");
+        input.setProperty("env.HOME", "/root");
+        input.setProperty("user.home", "/home/user");
+
+        java.util.Properties lean = ScalpelLifecycleParticipant.leanSystemProperties(input);
+
+        assertEquals("21", lean.getProperty("java.version"), "JVM property retained");
+        assertEquals("Linux", lean.getProperty("os.name"), "JVM property retained");
+        assertEquals("/home/user", lean.getProperty("user.home"), "JVM property retained");
+        assertFalse(lean.containsKey("env.PATH"), "env.PATH must be filtered out");
+        assertFalse(lean.containsKey("env.HOME"), "env.HOME must be filtered out");
+    }
+
+    @Test
+    void leanSystemProperties_handlesNull() {
+        assertNull(ScalpelLifecycleParticipant.leanSystemProperties(null));
+    }
+
+    @Test
+    void leanSystemProperties_handlesEmpty() {
+        java.util.Properties result = ScalpelLifecycleParticipant.leanSystemProperties(new java.util.Properties());
+        assertNotNull(result);
+        assertTrue(result.isEmpty());
+    }
+
+    @Test
+    void leanSystemProperties_returnsSnapshot_notLiveReference() {
+        java.util.Properties input = new java.util.Properties();
+        input.setProperty("java.version", "21");
+        java.util.Properties lean = ScalpelLifecycleParticipant.leanSystemProperties(input);
+        // Mutating the original must not affect the snapshot
+        input.setProperty("java.version", "99");
+        assertEquals("21", lean.getProperty("java.version"), "lean copy must be a snapshot");
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
 
     @Test
     void reportMode_includesTransitivelyAffectedModules() throws Exception {
@@ -2129,10 +2174,14 @@ class ScalpelLifecycleParticipantTest {
                 .thenReturn(new ChangeDetectionResult(changedFiles, oldPoms));
 
         // Mock dependency resolution: module-b has commons-lang transitively (old=1.0, new=2.0)
+        // and also depends on module-a (the reactor dep that changed).
+        // The reactor dep is what allows the second-pass propagation to catch module-b.
         org.eclipse.aether.graph.Dependency commonsLangNew = new org.eclipse.aether.graph.Dependency(
                 new DefaultArtifact("commons-lang", "commons-lang", "jar", "2.0"), "compile");
         org.eclipse.aether.graph.Dependency commonsLangOld = new org.eclipse.aether.graph.Dependency(
                 new DefaultArtifact("commons-lang", "commons-lang", "jar", "1.0"), "compile");
+        org.eclipse.aether.graph.Dependency moduleADep = new org.eclipse.aether.graph.Dependency(
+                new DefaultArtifact("com.example", "module-a", "jar", "1.0"), "compile");
 
         when(dependenciesResolver.resolve(any(DefaultDependencyResolutionRequest.class)))
                 .thenAnswer(invocation -> {
@@ -2141,8 +2190,13 @@ class ScalpelLifecycleParticipantTest {
                     boolean isOldResolution = allProjects.stream().noneMatch(p -> p == reqProject);
                     if ("module-b".equals(reqProject.getArtifactId())) {
                         DependencyResolutionResult res = mock(DependencyResolutionResult.class);
+                        // Current (new) resolution includes both module-a (reactor dep) and commons-lang;
+                        // old resolution (from temp project) only has the old commons-lang version.
                         when(res.getDependencyGraph())
-                                .thenReturn(createDependencyGraph(isOldResolution ? commonsLangOld : commonsLangNew));
+                                .thenReturn(
+                                        isOldResolution
+                                                ? createDependencyGraph(commonsLangOld)
+                                                : createDependencyGraph(moduleADep, commonsLangNew));
                         return res;
                     }
                     DependencyResolutionResult empty = mock(DependencyResolutionResult.class);
