@@ -902,11 +902,29 @@ class PomChangeAnalyzer {
         // but unused properties.  This also covers properties used in non-dependency
         // POM elements (e.g. <finalName>, plugin configuration) and in filtered
         // resources, since those properties are typically defined in the project itself.
+        //
+        // EXCEPTION: properties whose raw value exclusively references path-anchored
+        // built-in Maven expressions (${project.basedir}, ${project.build.directory}, etc.)
+        // are skipped.  These expressions resolve relative to the POM file location, so
+        // old effective models (built in a temp directory) always produce different values
+        // than new effective models (built from the real directory) — producing false
+        // positives that mark every child of a changed parent as affected.
         Properties rawChildProps = child.getOriginalModel().getProperties();
         if (rawChildProps != null && !rawChildProps.isEmpty()) {
             Properties oldEffectiveProps = oldChildEffective.getProperties();
             Properties newEffectiveProps = newChildEffective.getProperties();
             for (String propName : rawChildProps.stringPropertyNames()) {
+                String rawValue = rawChildProps.getProperty(propName);
+                if (rawValue != null && isPathAnchoredRawValue(rawValue)) {
+                    if (logger.isDebugEnabled()) {
+                        logger.debug(
+                                "Child {} property {} skipped (path-anchored raw value: {})",
+                                key(child),
+                                propName,
+                                rawValue);
+                    }
+                    continue;
+                }
                 String oldValue = oldEffectiveProps != null ? oldEffectiveProps.getProperty(propName) : null;
                 String newValue = newEffectiveProps != null ? newEffectiveProps.getProperty(propName) : null;
                 if (!Objects.equals(oldValue, newValue)) {
@@ -1088,6 +1106,44 @@ class PomChangeAnalyzer {
             }
         }
         return ids;
+    }
+
+    /**
+     * Returns {@code true} if the given raw property value exclusively references path-anchored
+     * Maven built-in expressions ({@code ${project.basedir}}, {@code ${project.build.directory}},
+     * etc.) and no user-defined property placeholders.
+     *
+     * <p>Such properties will always compare as changed when old effective models are built in a
+     * temp directory, because the path expressions resolve relative to the POM file location.
+     * They carry no real semantic change information and must be skipped.
+     *
+     * <p>A raw value passes if every {@code ${…}} token in it names only a
+     * {@link #PATH_ANCHORED_PROPERTIES path-anchored property}.  If the value contains
+     * no {@code ${…}} tokens at all (a static literal) it is not considered path-anchored
+     * and effective comparison proceeds normally.
+     */
+    static boolean isPathAnchoredRawValue(String rawValue) {
+        int start = rawValue.indexOf("${");
+        if (start < 0) {
+            return false; // static literal — safe to compare effective values
+        }
+        int pos = 0;
+        while (pos < rawValue.length()) {
+            int s = rawValue.indexOf("${", pos);
+            if (s < 0) {
+                break;
+            }
+            int e = rawValue.indexOf('}', s + 2);
+            if (e < 0) {
+                return false; // malformed — don't skip
+            }
+            String token = rawValue.substring(s + 2, e);
+            if (!PATH_ANCHORED_PROPERTIES.contains(token)) {
+                return false; // contains at least one non-path-anchored placeholder
+            }
+            pos = e + 1;
+        }
+        return true;
     }
 
     Set<String> diffProperties(Properties oldProps, Properties newProps) {
@@ -1621,6 +1677,24 @@ class PomChangeAnalyzer {
 
     private static final int MAX_RESOURCE_WALK_DEPTH = 32;
     private static final int MAX_RESOURCE_WALK_FILES = 10_000;
+
+    /**
+     * Path-anchored Maven built-in properties: their effective values are resolved from the POM
+     * file's on-disk location.  When old effective models are built in a temp directory, these
+     * properties resolve to paths inside that temp dir, causing false positives when comparing
+     * old vs new effective values.  Properties whose raw value references <em>only</em> these
+     * expressions are skipped during effective-value comparison.
+     */
+    static final Set<String> PATH_ANCHORED_PROPERTIES = Set.of(
+            "project.basedir",
+            "basedir",
+            "project.build.directory",
+            "project.build.outputDirectory",
+            "project.build.testOutputDirectory",
+            "project.build.sourceDirectory",
+            "project.build.testSourceDirectory",
+            "project.build.scriptSourceDirectory",
+            "project.reporting.outputDirectory");
 
     private boolean scanDirectoryForPropertyRefs(Path dir, Set<String> changedPropertyNames, AnalysisContext ctx) {
         // Does not follow symbolic links: a symlink could loop forever or point
