@@ -1808,10 +1808,6 @@ class PomChangeAnalyzer {
             return Map.of();
         }
 
-        // Collect ALL active profile IDs across the entire reactor so parent-level
-        // profiles propagate correctly to child modules during standalone model building.
-        List<String> allActiveProfileIds = collectAllActiveProfileIds(allProjects);
-
         Path tempDir = null;
         try {
             tempDir = createSecureTempDirectory("scalpel-old-poms-");
@@ -1839,8 +1835,26 @@ class PomChangeAnalyzer {
                 String relPath = relativePom.toString().replace('\\', '/');
                 Path tempPomFile = tempDir.resolve(relativePom);
 
+                // Use only the profile IDs active for THIS project (its own lineage),
+                // not the reactor-wide union. The reactor-wide union causes false
+                // TRANSITIVE_DEPENDENCY matches: if module-a has profile "extra" active
+                // (e.g. activeByDefault) and module-b has a profile "extra" that is
+                // normally inactive (e.g. property-activated), the reactor-wide set
+                // force-activates module-b's "extra" profile when building its old
+                // effective model, making the old model differ from the new model even
+                // though module-b's POM is unchanged (issue #209).
+                // MavenProject.getActiveProfiles() already includes profiles from the
+                // project's parent lineage that are active, so parent-level profiles
+                // propagate correctly without requiring sibling profiles.
+                List<String> projectActiveProfileIds = getActiveProfileIdList(project);
+
                 Model model = buildSingleEffectiveModel(
-                        this.modelBuilder, tempPomFile, relPath, allActiveProfileIds, resolutionCtx, reactorPomsByGAV);
+                        this.modelBuilder,
+                        tempPomFile,
+                        relPath,
+                        projectActiveProfileIds,
+                        resolutionCtx,
+                        reactorPomsByGAV);
                 if (model != null) {
                     result.put(relPath, model);
                 }
@@ -1865,7 +1879,6 @@ class PomChangeAnalyzer {
      */
     Map<String, Model> buildCurrentEffectiveModels(
             List<MavenProject> allProjects, Path reactorRoot, ModelResolutionContext resolutionCtx) {
-        List<String> allActiveProfileIds = collectAllActiveProfileIds(allProjects);
         Path absRoot = reactorRoot.toAbsolutePath().normalize();
 
         // Build a GAV→file map pointing to the actual (current) POM files.
@@ -1880,8 +1893,11 @@ class PomChangeAnalyzer {
             Path pomPath = project.getFile().toPath().toAbsolutePath().normalize();
             String relPath = absRoot.relativize(pomPath).toString().replace('\\', '/');
 
+            // Use per-project active profile IDs (see buildEffectiveModels for rationale).
+            List<String> projectActiveProfileIds = getActiveProfileIdList(project);
+
             Model model = buildSingleEffectiveModel(
-                    this.modelBuilder, pomPath, relPath, allActiveProfileIds, resolutionCtx, reactorPomsByGAV);
+                    this.modelBuilder, pomPath, relPath, projectActiveProfileIds, resolutionCtx, reactorPomsByGAV);
             if (model != null) {
                 result.put(relPath, model);
             }
@@ -1890,22 +1906,22 @@ class PomChangeAnalyzer {
     }
 
     /**
-     * Collect all active profile IDs from every project in the reactor.
-     * Passing the full set to each ModelBuilder request ensures that parent-level
-     * profiles (e.g. a profile in the root POM that adds managed dependencies)
-     * are activated when building child effective models — the ModelBuilder
-     * silently ignores IDs that don't match any profile in the current POM.
+     * Returns the active profile IDs for a single project as a list.
+     * Uses the project's own active profiles — those that are genuinely active
+     * for this module and its parent lineage — rather than the reactor-wide union.
+     * This avoids force-activating sibling modules' profiles when building effective
+     * models (issue #209).
      */
-    private static List<String> collectAllActiveProfileIds(List<MavenProject> allProjects) {
-        Set<String> ids = new LinkedHashSet<>();
-        for (MavenProject project : allProjects) {
-            if (project.getActiveProfiles() != null) {
-                for (Profile profile : project.getActiveProfiles()) {
-                    ids.add(profile.getId());
-                }
-            }
+    private static List<String> getActiveProfileIdList(MavenProject project) {
+        List<Profile> activeProfiles = project.getActiveProfiles();
+        if (activeProfiles == null || activeProfiles.isEmpty()) {
+            return List.of();
         }
-        return new ArrayList<>(ids);
+        List<String> ids = new ArrayList<>(activeProfiles.size());
+        for (Profile profile : activeProfiles) {
+            ids.add(profile.getId());
+        }
+        return ids;
     }
 
     private void reconstructPomHierarchy(

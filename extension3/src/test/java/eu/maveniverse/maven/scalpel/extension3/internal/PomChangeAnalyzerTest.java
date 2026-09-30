@@ -608,10 +608,14 @@ class PomChangeAnalyzerTest {
 
         List<MavenProject> projects = buildProjectList(root, parentPomXml, moduleAPomXml, moduleBPomXml);
 
-        // Set profile as active on parent
+        // In real Maven, a profile active in a parent POM is also present in the child's
+        // getActiveProfiles() list (Maven merges parent profiles into children during
+        // project building). Set "my-profile" as active on all projects to reflect this.
         Profile activeProfile = new Profile();
         activeProfile.setId("my-profile");
         projects.get(0).setActiveProfiles(List.of(activeProfile));
+        projects.get(1).setActiveProfiles(List.of(activeProfile)); // module-a inherits parent profile
+        projects.get(2).setActiveProfiles(List.of(activeProfile)); // module-b inherits parent profile
 
         // Old parent POM had dep.version=1.0 in the profile
         String oldParentPom = """
@@ -767,9 +771,14 @@ class PomChangeAnalyzerTest {
         writePom(root.resolve("module-b/pom.xml"), moduleBPomXml);
 
         List<MavenProject> projects = buildProjectList(root, parentPomXml, moduleAPomXml, moduleBPomXml);
+        // In real Maven, a profile active in a parent POM is also present in the child's
+        // getActiveProfiles() list (Maven merges parent profiles into children during
+        // project building). Set "my-profile" as active on all projects to reflect this.
         Profile activeProfile = new Profile();
         activeProfile.setId("my-profile");
         projects.get(0).setActiveProfiles(List.of(activeProfile));
+        projects.get(1).setActiveProfiles(List.of(activeProfile)); // module-a inherits parent profile
+        projects.get(2).setActiveProfiles(List.of(activeProfile)); // module-b inherits parent profile
 
         // Simulate Maven resolving managed dep version from the active profile into
         // module-b's effective dependency list (setEffectiveModel doesn't merge profiles)
@@ -809,6 +818,198 @@ class PomChangeAnalyzerTest {
                 "module-b uses managed dep lib-x from active profile and should be affected");
         assertFalse(result.getAffectedProjects().contains(projects.get(1)), "module-a does NOT use lib-x");
         assertTrue(deriveChangedManagedDeps(result).contains("com.example:lib-x"));
+    }
+
+    /**
+     * Regression test for issue #209: profile IDs active in one module must not be
+     * force-activated when building another module's old effective model.
+     *
+     * Scenario:
+     * - module-a has profile "extra" active via activeByDefault; it declares commons-lang3.
+     * - module-b has profile "extra" that is only activated by -Dextra (inactive in this build);
+     *   it declares commons-io.
+     * - Only module-c's POM changes.
+     *
+     * Bug: collectAllActiveProfileIds() merged profile IDs from all reactor projects, so
+     * "extra" appeared in the reactor-wide set. buildSingleEffectiveModel() then
+     * force-activated module-b's "extra" profile when building its old model, causing
+     * commons-io to appear in the old model but not the new model → false TRANSITIVE match.
+     *
+     * Fix: use per-project active profile IDs (from project.getActiveProfiles()) rather than
+     * the reactor-wide union.
+     */
+    @Test
+    void analyzeChanges_sameProfileIdInSiblingDoesNotCrossTaint() throws Exception {
+        Path root = tempDir.resolve("issue-209-repro");
+        Files.createDirectories(root);
+
+        // Aggregator POM
+        String rootPomXml = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId>
+                  <artifactId>aggregator</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                  <packaging>pom</packaging>
+                  <modules>
+                    <module>module-a</module>
+                    <module>module-b</module>
+                    <module>module-c</module>
+                  </modules>
+                </project>
+                """;
+        writePom(root.resolve("pom.xml"), rootPomXml);
+
+        // module-a: profile "extra" is activeByDefault, declares commons-lang3
+        String moduleAPomXml = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId>
+                  <artifactId>module-a</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                  <profiles>
+                    <profile>
+                      <id>extra</id>
+                      <activation><activeByDefault>true</activeByDefault></activation>
+                      <dependencies>
+                        <dependency>
+                          <groupId>org.apache.commons</groupId>
+                          <artifactId>commons-lang3</artifactId>
+                          <version>3.17.0</version>
+                        </dependency>
+                      </dependencies>
+                    </profile>
+                  </profiles>
+                </project>
+                """;
+        writePom(root.resolve("module-a/pom.xml"), moduleAPomXml);
+
+        // module-b: profile "extra" requires -Dextra (inactive), declares commons-io
+        String moduleBPomXml = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId>
+                  <artifactId>module-b</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                  <profiles>
+                    <profile>
+                      <id>extra</id>
+                      <activation><property><name>extra</name></property></activation>
+                      <dependencies>
+                        <dependency>
+                          <groupId>commons-io</groupId>
+                          <artifactId>commons-io</artifactId>
+                          <version>2.18.0</version>
+                        </dependency>
+                      </dependencies>
+                    </profile>
+                  </profiles>
+                </project>
+                """;
+        writePom(root.resolve("module-b/pom.xml"), moduleBPomXml);
+
+        // module-c: trivial module whose POM changes (this is the only change)
+        String moduleCPomXmlNew = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId>
+                  <artifactId>module-c</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                  <properties><foo>2</foo></properties>
+                </project>
+                """;
+        writePom(root.resolve("module-c/pom.xml"), moduleCPomXmlNew);
+
+        // Register reactor POMs for resolver
+        reactorPomFiles.put(
+                "org.example:aggregator:1.0.0-SNAPSHOT", root.resolve("pom.xml").toFile());
+        reactorPomFiles.put(
+                "org.example:module-a:1.0.0-SNAPSHOT",
+                root.resolve("module-a/pom.xml").toFile());
+        reactorPomFiles.put(
+                "org.example:module-b:1.0.0-SNAPSHOT",
+                root.resolve("module-b/pom.xml").toFile());
+        reactorPomFiles.put(
+                "org.example:module-c:1.0.0-SNAPSHOT",
+                root.resolve("module-c/pom.xml").toFile());
+
+        // Build MavenProject list
+        MavenProject rootProject = createProject(
+                "org.example",
+                "aggregator",
+                "1.0.0-SNAPSHOT",
+                root.resolve("pom.xml").toFile());
+        rootProject.setOriginalModel(parseModel(rootPomXml));
+        setEffectiveModel(rootProject, rootPomXml);
+
+        MavenProject moduleA = createProject(
+                "org.example",
+                "module-a",
+                "1.0.0-SNAPSHOT",
+                root.resolve("module-a/pom.xml").toFile());
+        moduleA.setOriginalModel(parseModel(moduleAPomXml));
+        // module-a's "extra" profile is activeByDefault → it is active
+        Profile extraActive = new Profile();
+        extraActive.setId("extra");
+        moduleA.setActiveProfiles(List.of(extraActive));
+        setEffectiveModel(moduleA, moduleAPomXml);
+
+        MavenProject moduleB = createProject(
+                "org.example",
+                "module-b",
+                "1.0.0-SNAPSHOT",
+                root.resolve("module-b/pom.xml").toFile());
+        moduleB.setOriginalModel(parseModel(moduleBPomXml));
+        // module-b's "extra" profile requires -Dextra → NOT active in this build
+        moduleB.setActiveProfiles(List.of());
+        setEffectiveModel(moduleB, moduleBPomXml);
+
+        MavenProject moduleC = createProject(
+                "org.example",
+                "module-c",
+                "1.0.0-SNAPSHOT",
+                root.resolve("module-c/pom.xml").toFile());
+        String moduleCPomXmlOld = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId>
+                  <artifactId>module-c</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                  <properties><foo>1</foo></properties>
+                </project>
+                """;
+        moduleC.setOriginalModel(parseModel(moduleCPomXmlNew));
+        moduleC.setActiveProfiles(List.of());
+        setEffectiveModel(moduleC, moduleCPomXmlNew);
+
+        List<MavenProject> projects = List.of(rootProject, moduleA, moduleB, moduleC);
+
+        // Only module-c's POM changed
+        Set<String> changedPoms = Set.of("module-c/pom.xml");
+        Map<String, byte[]> oldPoms = new HashMap<>();
+        oldPoms.put("module-c/pom.xml", moduleCPomXmlOld.getBytes(StandardCharsets.UTF_8));
+
+        PomChangeAnalyzer.Result result = analyzeChanges(changedPoms, oldPoms, projects, root);
+
+        // Only module-c should be affected — it is a leaf module whose POM changed.
+        // module-b must NOT be affected: its "extra" profile is inactive, and the
+        // reactor-wide union of profile IDs must NOT force-activate it.
+        assertTrue(
+                result.getAffectedProjects().contains(moduleC), "module-c POM changed: it must be directly affected");
+        assertFalse(
+                result.getAffectedProjects().contains(moduleB),
+                "module-b's 'extra' profile is inactive — it must NOT be affected (issue #209)");
+        assertFalse(
+                result.getAffectedProjects().contains(moduleA),
+                "module-a's POM is unchanged — it must not be affected");
+        assertFalse(
+                result.getAffectedProjects().contains(rootProject),
+                "aggregator POM is unchanged — it must not be affected");
     }
 
     // --- Source directory, resource, and repository comparison tests (parameterized) ---
