@@ -956,6 +956,7 @@ class PomChangeAnalyzerTest {
         Profile extraActive = new Profile();
         extraActive.setId("extra");
         moduleA.setActiveProfiles(List.of(extraActive));
+        moduleA.setParent(rootProject);
         setEffectiveModel(moduleA, moduleAPomXml);
 
         MavenProject moduleB = createProject(
@@ -966,6 +967,7 @@ class PomChangeAnalyzerTest {
         moduleB.setOriginalModel(parseModel(moduleBPomXml));
         // module-b's "extra" profile requires -Dextra → NOT active in this build
         moduleB.setActiveProfiles(List.of());
+        moduleB.setParent(rootProject);
         setEffectiveModel(moduleB, moduleBPomXml);
 
         MavenProject moduleC = createProject(
@@ -985,6 +987,7 @@ class PomChangeAnalyzerTest {
                 """;
         moduleC.setOriginalModel(parseModel(moduleCPomXmlNew));
         moduleC.setActiveProfiles(List.of());
+        moduleC.setParent(rootProject);
         setEffectiveModel(moduleC, moduleCPomXmlNew);
 
         List<MavenProject> projects = List.of(rootProject, moduleA, moduleB, moduleC);
@@ -1010,6 +1013,128 @@ class PomChangeAnalyzerTest {
         assertFalse(
                 result.getAffectedProjects().contains(rootProject),
                 "aggregator POM is unchanged — it must not be affected");
+    }
+
+    /**
+     * Verifies the ancestor chain walk in getActiveProfileIdList(): a profile active only
+     * on the parent (and NOT set in children's getActiveProfiles()) is still picked up
+     * via the parent chain walk, so the child's old effective model is built correctly.
+     *
+     * This exercises the defensive ancestor walk for edge cases where Maven might not have
+     * merged parent profiles into the child's getActiveProfiles() list.
+     */
+    @Test
+    void analyzeChanges_ancestorChainWalkPicksUpParentOnlyProfile() throws Exception {
+        Path root = tempDir.resolve("ancestor-walk-test");
+        Files.createDirectories(root);
+
+        // Parent POM with profile "release" that sets a property
+        String parentPomXml = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId>
+                  <artifactId>parent</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                  <packaging>pom</packaging>
+                  <modules><module>child</module></modules>
+                  <profiles><profile>
+                    <id>release</id>
+                    <properties><dep.version>2.0</dep.version></properties>
+                  </profile></profiles>
+                </project>
+                """;
+        writePom(root.resolve("pom.xml"), parentPomXml);
+
+        // Child uses ${dep.version} from the parent's profile
+        String childPomXml = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <parent>
+                    <groupId>org.example</groupId>
+                    <artifactId>parent</artifactId>
+                    <version>1.0.0-SNAPSHOT</version>
+                  </parent>
+                  <artifactId>child</artifactId>
+                  <dependencies>
+                    <dependency>
+                      <groupId>commons-io</groupId>
+                      <artifactId>commons-io</artifactId>
+                      <version>${dep.version}</version>
+                    </dependency>
+                  </dependencies>
+                </project>
+                """;
+        writePom(root.resolve("child/pom.xml"), childPomXml);
+
+        // Register reactor POMs
+        reactorPomFiles.put(
+                "org.example:parent:1.0.0-SNAPSHOT", root.resolve("pom.xml").toFile());
+        reactorPomFiles.put(
+                "org.example:child:1.0.0-SNAPSHOT",
+                root.resolve("child/pom.xml").toFile());
+
+        // Build parent project with "release" profile active
+        MavenProject parentProject = createProject(
+                "org.example",
+                "parent",
+                "1.0.0-SNAPSHOT",
+                root.resolve("pom.xml").toFile());
+        parentProject.setOriginalModel(parseModel(parentPomXml));
+        parentProject.getModel().setPackaging("pom");
+        Profile releaseProfile = new Profile();
+        releaseProfile.setId("release");
+        parentProject.setActiveProfiles(List.of(releaseProfile));
+        setEffectiveModel(parentProject, parentPomXml);
+
+        // Build child project — deliberately do NOT set "release" in child's
+        // getActiveProfiles() to simulate the edge case where Maven hasn't
+        // merged parent profiles into the child. The ancestor walk should
+        // pick up "release" from the parent anyway.
+        MavenProject childProject = createProject(
+                "org.example",
+                "child",
+                "1.0.0-SNAPSHOT",
+                root.resolve("child/pom.xml").toFile());
+        childProject.setOriginalModel(parseModel(childPomXml));
+        childProject.setActiveProfiles(List.of()); // no profiles on child itself
+        childProject.setParent(parentProject); // ancestor chain is set
+        setEffectiveModel(childProject, childPomXml);
+
+        List<MavenProject> projects = List.of(parentProject, childProject);
+
+        // Parent POM changed: dep.version was 1.0 in old version
+        String oldParentPom = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>org.example</groupId>
+                  <artifactId>parent</artifactId>
+                  <version>1.0.0-SNAPSHOT</version>
+                  <packaging>pom</packaging>
+                  <modules><module>child</module></modules>
+                  <profiles><profile>
+                    <id>release</id>
+                    <properties><dep.version>1.0</dep.version></properties>
+                  </profile></profiles>
+                </project>
+                """;
+
+        Set<String> changedPoms = Set.of("pom.xml");
+        Map<String, byte[]> oldPoms = new HashMap<>();
+        oldPoms.put("pom.xml", oldParentPom.getBytes(StandardCharsets.UTF_8));
+
+        PomChangeAnalyzer.Result result = analyzeChanges(changedPoms, oldPoms, projects, root);
+
+        // The child must be transitively affected because the "release" profile in the
+        // parent changed dep.version from 1.0 to 2.0. The ancestor walk ensures the
+        // "release" profile ID is passed to the model builder even though the child's
+        // own getActiveProfiles() is empty.
+        assertTrue(
+                result.getAffectedProjects().contains(childProject),
+                "child must be transitively affected — parent's 'release' profile changed dep.version, "
+                        + "and the ancestor walk should pick up the profile ID from the parent");
     }
 
     // --- Source directory, resource, and repository comparison tests (parameterized) ---

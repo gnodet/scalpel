@@ -1835,19 +1835,19 @@ class PomChangeAnalyzer {
                 String relPath = relativePom.toString().replace('\\', '/');
                 Path tempPomFile = tempDir.resolve(relativePom);
 
-                // Use profile IDs from this project's ancestor chain (project + all
-                // reactor parents), not the reactor-wide union. The reactor-wide union
-                // causes false matches: if module-a has profile "extra" active
-                // (e.g. activeByDefault) and module-b has a profile "extra" that is
-                // normally inactive (e.g. property-activated), the reactor-wide set
-                // force-activates module-b's "extra" profile when building its old
-                // effective model, making the old model differ from the new model even
-                // though module-b's POM is unchanged (issue #209).
-                // Walking the ancestor chain (MavenProject.getParent()) captures profiles
-                // defined in the root/parent POM and activated via -P, which child modules
-                // do NOT inherit in their own getActiveProfiles() but MUST be passed to
-                // the model builder so the parent's effective properties (e.g. app.version
-                // from a profile) are correctly resolved when building the child's old model.
+                // Use profile IDs from this project only, not the reactor-wide union.
+                // The reactor-wide union causes false matches: if module-a has profile
+                // "extra" active (e.g. activeByDefault) and module-b has a profile
+                // "extra" that is normally inactive (e.g. property-activated), the
+                // reactor-wide set force-activates module-b's "extra" profile when
+                // building its old effective model, making the old model differ from
+                // the new model even though module-b's POM is unchanged (issue #209).
+                //
+                // getActiveProfileIdList() reads the project's own getActiveProfiles()
+                // and walks the parent chain as a defensive measure. In practice, Maven
+                // merges parent-lineage profiles into each child's getActiveProfiles()
+                // during project building, so the parent walk is redundant — but it
+                // guards against edge cases where that merge hasn't happened yet.
                 List<String> projectActiveProfileIds = getActiveProfileIdList(project);
 
                 Model model = buildSingleEffectiveModel(
@@ -1895,7 +1895,7 @@ class PomChangeAnalyzer {
             Path pomPath = project.getFile().toPath().toAbsolutePath().normalize();
             String relPath = absRoot.relativize(pomPath).toString().replace('\\', '/');
 
-            // Use ancestor-chain profile IDs (see buildEffectiveModels for rationale).
+            // Use per-project profile IDs (see buildEffectiveModels for rationale).
             List<String> projectActiveProfileIds = getActiveProfileIdList(project);
 
             Model model = buildSingleEffectiveModel(
@@ -1908,14 +1908,14 @@ class PomChangeAnalyzer {
     }
 
     /**
-     * Returns the active profile IDs for a project and its ancestor chain as a list.
-     * Walks the {@link MavenProject#getParent()} chain and collects profile IDs from
-     * every ancestor that is part of the same reactor (i.e. has a non-null parent
-     * reference that Maven resolved). This correctly handles the case where a profile
-     * is defined in the root aggregator POM and activated via {@code -P}: the child
-     * module's own {@code getActiveProfiles()} is empty (the profile is not in its own
-     * POM), but the root/parent project does have it active, so we need to include it
-     * when building the child's effective model.
+     * Returns the active profile IDs for a project, including profiles from its
+     * ancestor chain (parent, grandparent, etc.), as a list.
+     * <p>
+     * Maven merges parent-lineage profiles into each child's {@code getActiveProfiles()}
+     * during project building, so the parent walk is normally redundant — the child's
+     * own {@code getActiveProfiles()} already contains inherited profiles. The walk is
+     * kept as a defensive measure for edge cases where that merge hasn't happened yet
+     * (e.g. very early lifecycle phases).
      * <p>
      * Crucially, this does NOT include profiles from sibling modules — only from the
      * direct ancestor chain. This avoids the cross-contamination described in issue
