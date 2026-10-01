@@ -3824,6 +3824,11 @@ class PomChangeAnalyzerTest {
     }
 
     @Test
+    void isPathAnchoredRawValue_projectBaseUriIsPathAnchored() {
+        assertTrue(PomChangeAnalyzer.isPathAnchoredRawValue("${project.baseUri}/a.jar"));
+    }
+
+    @Test
     void isPathAnchoredRawValue_buildDirectoryIsPathAnchored() {
         assertTrue(PomChangeAnalyzer.isPathAnchoredRawValue("${project.build.directory}/a.jar"));
     }

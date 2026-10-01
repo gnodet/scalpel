@@ -1688,6 +1688,7 @@ class PomChangeAnalyzer {
     static final Set<String> PATH_ANCHORED_PROPERTIES = Set.of(
             "project.basedir",
             "basedir",
+            "project.baseUri",
             "project.build.directory",
             "project.build.outputDirectory",
             "project.build.testOutputDirectory",
