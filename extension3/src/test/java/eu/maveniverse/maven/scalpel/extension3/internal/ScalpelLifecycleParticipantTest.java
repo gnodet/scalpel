@@ -137,10 +137,10 @@ class ScalpelLifecycleParticipantTest {
                 dependenciesResolver);
     }
 
-    // ─── leanSystemProperties ────────────────────────────────────────────────
+    // ─── snapshotSystemProperties ────────────────────────────────────────────
 
     @Test
-    void leanSystemProperties_removesEnvEntries() {
+    void snapshotSystemProperties_preservesAllEntries() {
         java.util.Properties input = new java.util.Properties();
         input.setProperty("java.version", "21");
         input.setProperty("os.name", "Linux");
@@ -148,35 +148,35 @@ class ScalpelLifecycleParticipantTest {
         input.setProperty("env.HOME", "/root");
         input.setProperty("user.home", "/home/user");
 
-        java.util.Properties lean = ScalpelLifecycleParticipant.leanSystemProperties(input);
+        java.util.Properties snapshot = ScalpelLifecycleParticipant.snapshotSystemProperties(input);
 
-        assertEquals("21", lean.getProperty("java.version"), "JVM property retained");
-        assertEquals("Linux", lean.getProperty("os.name"), "JVM property retained");
-        assertEquals("/home/user", lean.getProperty("user.home"), "JVM property retained");
-        assertFalse(lean.containsKey("env.PATH"), "env.PATH must be filtered out");
-        assertFalse(lean.containsKey("env.HOME"), "env.HOME must be filtered out");
+        assertEquals("21", snapshot.getProperty("java.version"), "JVM property retained");
+        assertEquals("Linux", snapshot.getProperty("os.name"), "JVM property retained");
+        assertEquals("/home/user", snapshot.getProperty("user.home"), "JVM property retained");
+        assertEquals("/usr/bin:/bin", snapshot.getProperty("env.PATH"), "env.PATH must be preserved");
+        assertEquals("/root", snapshot.getProperty("env.HOME"), "env.HOME must be preserved");
     }
 
     @Test
-    void leanSystemProperties_handlesNull() {
-        assertNull(ScalpelLifecycleParticipant.leanSystemProperties(null));
+    void snapshotSystemProperties_handlesNull() {
+        assertNull(ScalpelLifecycleParticipant.snapshotSystemProperties(null));
     }
 
     @Test
-    void leanSystemProperties_handlesEmpty() {
-        java.util.Properties result = ScalpelLifecycleParticipant.leanSystemProperties(new java.util.Properties());
+    void snapshotSystemProperties_handlesEmpty() {
+        java.util.Properties result = ScalpelLifecycleParticipant.snapshotSystemProperties(new java.util.Properties());
         assertNotNull(result);
         assertTrue(result.isEmpty());
     }
 
     @Test
-    void leanSystemProperties_returnsSnapshot_notLiveReference() {
+    void snapshotSystemProperties_returnsSnapshot_notLiveReference() {
         java.util.Properties input = new java.util.Properties();
         input.setProperty("java.version", "21");
-        java.util.Properties lean = ScalpelLifecycleParticipant.leanSystemProperties(input);
+        java.util.Properties snapshot = ScalpelLifecycleParticipant.snapshotSystemProperties(input);
         // Mutating the original must not affect the snapshot
         input.setProperty("java.version", "99");
-        assertEquals("21", lean.getProperty("java.version"), "lean copy must be a snapshot");
+        assertEquals("21", snapshot.getProperty("java.version"), "snapshot must be a point-in-time copy");
     }
 
     // ─────────────────────────────────────────────────────────────────────────

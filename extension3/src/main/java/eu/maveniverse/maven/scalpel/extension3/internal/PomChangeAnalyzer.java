@@ -1842,6 +1842,21 @@ class PomChangeAnalyzer {
                 String depRelPath =
                         normalizedRoot.relativize(depPomPath).toString().replace('\\', '/');
                 needed.add(depRelPath);
+                // If a BOM importer is itself a parent, its descendants inherit the changed
+                // dependency management via parent inheritance. Include them so their effective
+                // models are built and compared, rather than relying on the conservative fallback
+                // which can miss modules that only inherit (no reactor dependency on the parent).
+                if (parents.contains(dependent)) {
+                    for (MavenProject descendant : descendantMap.getOrDefault(dependent, List.of())) {
+                        Path descPomPath =
+                                descendant.getFile().toPath().toAbsolutePath().normalize();
+                        String descRelPath = normalizedRoot
+                                .relativize(descPomPath)
+                                .toString()
+                                .replace('\\', '/');
+                        needed.add(descRelPath);
+                    }
+                }
             }
         }
         return needed;

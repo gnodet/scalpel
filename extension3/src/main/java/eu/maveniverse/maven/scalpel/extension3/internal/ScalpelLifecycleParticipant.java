@@ -312,7 +312,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                                 reactorRoot,
                                 config.isExplain(),
                                 new PomChangeAnalyzer.ModelResolutionContext(
-                                        leanSystemProperties(session.getSystemProperties()),
+                                        snapshotSystemProperties(session.getSystemProperties()),
                                         session.getUserProperties(),
                                         session.getRepositorySession(),
                                         allProjects.get(0).getRemoteProjectRepositories()),
@@ -953,43 +953,38 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
     }
 
     /**
-     * Creates a lean copy of Maven session system properties for POM effective model building.
+     * Creates a snapshot copy of Maven session system properties for POM effective model building.
      * <p>
-     * Maven's {@code session.getSystemProperties()} aggregates JVM system properties,
-     * environment variables (mapped as {@code env.*}), and other Maven internals.
-     * On large CI environments (GitHub Actions, Jenkins), the {@code env.*} entries alone
-     * can total thousands of key-value pairs with very large values (e.g. {@code PATH}
-     * on Windows can exceed several kilobytes).
+     * Maven's {@code session.getSystemProperties()} returns a live, {@code ConcurrentHashMap}-backed
+     * {@code Properties} object whose iterators and snapshot operations are significantly more
+     * expensive than those of a plain {@code Hashtable}-backed {@code Properties}. When Scalpel
+     * builds effective models, each call to
+     * {@link org.apache.maven.model.building.DefaultModelBuildingRequest#setSystemProperties}
+     * copies the full Properties object — and Maven calls this recursively for every BOM import.
+     * Passing the live object to hundreds of model builds causes severe GC pressure and potential
+     * {@link OutOfMemoryError}.
      * <p>
-     * When Scalpel builds effective models for large reactors (hundreds of modules), each
-     * call to {@link org.apache.maven.model.building.DefaultModelBuildingRequest#setSystemProperties}
-     * copies the full Properties object — and Maven calls this recursively for every BOM
-     * import. Passing the full live ConcurrentHashMap-backed Properties to hundreds of model
-     * builds causes severe GC pressure and potential {@link OutOfMemoryError}.
-     * <p>
-     * This method filters out {@code env.*} entries (environment variable mappings), which
-     * are almost never referenced in POM property interpolation ({@code ${env.VAR}} is
-     * extremely rare in POM files). Standard JVM system properties ({@code java.*},
-     * {@code os.*}, {@code user.*}, {@code file.*}, etc.) are preserved — these are the
-     * properties POMs actually use for profile activation and interpolation.
+     * This method creates a single plain-{@code Properties} snapshot upfront. All entries are
+     * preserved — including {@code env.*} environment variable mappings, which Maven's
+     * {@code AbstractStringBasedModelInterpolator} uses for both {@code ${env.VAR}} resolution
+     * (via a {@code MapBasedValueSource} on system properties) and bare {@code ${VAR}} fallback
+     * (via {@code getProperty("env." + expression)}).
      *
      * @param systemProperties the live session system properties (may be a large
      *                         {@code ConcurrentHashMap}-backed object)
-     * @return a lean snapshot copy with {@code env.*} entries removed
+     * @return a plain {@code Properties} snapshot copy with all entries preserved
      */
-    static Properties leanSystemProperties(Properties systemProperties) {
+    static Properties snapshotSystemProperties(Properties systemProperties) {
         if (systemProperties == null) {
             return null;
         }
-        Properties lean = new Properties();
+        Properties snapshot = new Properties();
         synchronized (systemProperties) {
             for (String key : systemProperties.stringPropertyNames()) {
-                if (!key.startsWith("env.")) {
-                    lean.setProperty(key, systemProperties.getProperty(key));
-                }
+                snapshot.setProperty(key, systemProperties.getProperty(key));
             }
         }
-        return lean;
+        return snapshot;
     }
 
     /** Decision-side module name: relative path, "." for the reactor root (#84, #101). */
