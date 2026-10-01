@@ -1835,17 +1835,19 @@ class PomChangeAnalyzer {
                 String relPath = relativePom.toString().replace('\\', '/');
                 Path tempPomFile = tempDir.resolve(relativePom);
 
-                // Use only the profile IDs active for THIS project (its own lineage),
-                // not the reactor-wide union. The reactor-wide union causes false
-                // TRANSITIVE_DEPENDENCY matches: if module-a has profile "extra" active
+                // Use profile IDs from this project's ancestor chain (project + all
+                // reactor parents), not the reactor-wide union. The reactor-wide union
+                // causes false matches: if module-a has profile "extra" active
                 // (e.g. activeByDefault) and module-b has a profile "extra" that is
                 // normally inactive (e.g. property-activated), the reactor-wide set
                 // force-activates module-b's "extra" profile when building its old
                 // effective model, making the old model differ from the new model even
                 // though module-b's POM is unchanged (issue #209).
-                // MavenProject.getActiveProfiles() already includes profiles from the
-                // project's parent lineage that are active, so parent-level profiles
-                // propagate correctly without requiring sibling profiles.
+                // Walking the ancestor chain (MavenProject.getParent()) captures profiles
+                // defined in the root/parent POM and activated via -P, which child modules
+                // do NOT inherit in their own getActiveProfiles() but MUST be passed to
+                // the model builder so the parent's effective properties (e.g. app.version
+                // from a profile) are correctly resolved when building the child's old model.
                 List<String> projectActiveProfileIds = getActiveProfileIdList(project);
 
                 Model model = buildSingleEffectiveModel(
@@ -1893,7 +1895,7 @@ class PomChangeAnalyzer {
             Path pomPath = project.getFile().toPath().toAbsolutePath().normalize();
             String relPath = absRoot.relativize(pomPath).toString().replace('\\', '/');
 
-            // Use per-project active profile IDs (see buildEffectiveModels for rationale).
+            // Use ancestor-chain profile IDs (see buildEffectiveModels for rationale).
             List<String> projectActiveProfileIds = getActiveProfileIdList(project);
 
             Model model = buildSingleEffectiveModel(
@@ -1906,22 +1908,33 @@ class PomChangeAnalyzer {
     }
 
     /**
-     * Returns the active profile IDs for a single project as a list.
-     * Uses the project's own active profiles — those that are genuinely active
-     * for this module and its parent lineage — rather than the reactor-wide union.
-     * This avoids force-activating sibling modules' profiles when building effective
-     * models (issue #209).
+     * Returns the active profile IDs for a project and its ancestor chain as a list.
+     * Walks the {@link MavenProject#getParent()} chain and collects profile IDs from
+     * every ancestor that is part of the same reactor (i.e. has a non-null parent
+     * reference that Maven resolved). This correctly handles the case where a profile
+     * is defined in the root aggregator POM and activated via {@code -P}: the child
+     * module's own {@code getActiveProfiles()} is empty (the profile is not in its own
+     * POM), but the root/parent project does have it active, so we need to include it
+     * when building the child's effective model.
+     * <p>
+     * Crucially, this does NOT include profiles from sibling modules — only from the
+     * direct ancestor chain. This avoids the cross-contamination described in issue
+     * #209, where a profile active in a sibling (e.g. via {@code activeByDefault}) was
+     * erroneously force-activated when building another sibling's old effective model.
      */
     private static List<String> getActiveProfileIdList(MavenProject project) {
-        List<Profile> activeProfiles = project.getActiveProfiles();
-        if (activeProfiles == null || activeProfiles.isEmpty()) {
-            return List.of();
+        Set<String> ids = new LinkedHashSet<>();
+        MavenProject current = project;
+        while (current != null) {
+            List<Profile> activeProfiles = current.getActiveProfiles();
+            if (activeProfiles != null) {
+                for (Profile profile : activeProfiles) {
+                    ids.add(profile.getId());
+                }
+            }
+            current = current.getParent();
         }
-        List<String> ids = new ArrayList<>(activeProfiles.size());
-        for (Profile profile : activeProfiles) {
-            ids.add(profile.getId());
-        }
-        return ids;
+        return new ArrayList<>(ids);
     }
 
     private void reconstructPomHierarchy(
