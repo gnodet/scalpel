@@ -25,6 +25,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Properties;
 import java.util.Set;
 import javax.inject.Inject;
 import javax.inject.Named;
@@ -311,7 +312,7 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                                 reactorRoot,
                                 config.isExplain(),
                                 new PomChangeAnalyzer.ModelResolutionContext(
-                                        session.getSystemProperties(),
+                                        snapshotSystemProperties(session.getSystemProperties()),
                                         session.getUserProperties(),
                                         session.getRepositorySession(),
                                         allProjects.get(0).getRemoteProjectRepositories()),
@@ -949,6 +950,41 @@ class ScalpelLifecycleParticipant extends AbstractMavenLifecycleParticipant {
                         + " would skip all {} modules (decisionId {})",
                 allProjects.size(),
                 decisionId);
+    }
+
+    /**
+     * Creates a snapshot copy of Maven session system properties for POM effective model building.
+     * <p>
+     * Maven's {@code session.getSystemProperties()} returns a live, {@code ConcurrentHashMap}-backed
+     * {@code Properties} object whose iterators and snapshot operations are significantly more
+     * expensive than those of a plain {@code Hashtable}-backed {@code Properties}. When Scalpel
+     * builds effective models, each call to
+     * {@link org.apache.maven.model.building.DefaultModelBuildingRequest#setSystemProperties}
+     * copies the full Properties object — and Maven calls this recursively for every BOM import.
+     * Passing the live object to hundreds of model builds causes severe GC pressure and potential
+     * {@link OutOfMemoryError}.
+     * <p>
+     * This method creates a single plain-{@code Properties} snapshot upfront. All entries are
+     * preserved — including {@code env.*} environment variable mappings, which Maven's
+     * {@code AbstractStringBasedModelInterpolator} uses for both {@code ${env.VAR}} resolution
+     * (via a {@code MapBasedValueSource} on system properties) and bare {@code ${VAR}} fallback
+     * (via {@code getProperty("env." + expression)}).
+     *
+     * @param systemProperties the live session system properties (may be a large
+     *                         {@code ConcurrentHashMap}-backed object)
+     * @return a plain {@code Properties} snapshot copy with all entries preserved
+     */
+    static Properties snapshotSystemProperties(Properties systemProperties) {
+        if (systemProperties == null) {
+            return null;
+        }
+        Properties snapshot = new Properties();
+        synchronized (systemProperties) {
+            for (String key : systemProperties.stringPropertyNames()) {
+                snapshot.setProperty(key, systemProperties.getProperty(key));
+            }
+        }
+        return snapshot;
     }
 
     /** Decision-side module name: relative path, "." for the reactor root (#84, #101). */

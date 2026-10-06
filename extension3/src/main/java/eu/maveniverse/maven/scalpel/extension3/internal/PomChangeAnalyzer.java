@@ -163,11 +163,12 @@ import org.slf4j.LoggerFactory;
  * The {@link Result} carries:
  * <ul>
  *   <li>{@code affectedProjects} — the set of directly affected modules</li>
- *   <li>{@code oldEffectiveModels} / {@code newEffectiveModels} — the full effective model
- *       maps, so the caller ({@link ScalpelLifecycleParticipant}) can perform its own
- *       downstream analysis: resolving old vs new dependency trees, comparing effective
- *       plugins for non-directly-affected modules, and propagating effects through reactor
- *       dependencies</li>
+ *   <li>{@code oldEffectiveModels} / {@code newEffectiveModels} — the effective model
+ *       maps for changed POMs and their direct dependents (children + BOM importers), so
+ *       the caller ({@link ScalpelLifecycleParticipant}) can perform its own downstream
+ *       analysis: deriving changed managed deps/plugins for the report. Only the subset of
+ *       reactor modules that can be transitively affected by POM changes are included;
+ *       the full reactor is not modelled (see #207).</li>
  *   <li>{@code changedProperties} — union of all changed properties across all parent POMs</li>
  *   <li>{@code evidence} — per-module explanation of why it was marked affected (explain mode)</li>
  * </ul>
@@ -497,14 +498,29 @@ class PomChangeAnalyzer {
         // Build map of reactor modules imported as BOMs by other reactor modules
         Map<MavenProject, List<MavenProject>> bomImporters = findBomImporters(allProjects);
 
-        // Build effective models for the entire reactor using the same ModelBuilder
+        // Compute the set of relative POM paths for which effective models are actually needed.
+        // Effective models are queried only for:
+        //   1. The changed POMs themselves (parent-level analysis: diffProperties, diffManagedDeps, etc.)
+        //   2. Their dependents (children via parent inheritance + BOM importers)
+        // Building effective models for the entire reactor is O(n) model builds, each of which
+        // triggers recursive BOM resolution — for large reactors (Quarkus: 1800+ modules) this
+        // causes heap exhaustion (#207).  We restrict model builds to the needed subset.
+        Set<String> neededRelPaths = computeNeededRelPaths(
+                changedPomPaths, projectByPomPath, parents, bomImporters, descendantMap, normalizedRoot);
+        logger.debug(
+                "Scalpel: effective model build scope: {} of {} reactor modules needed",
+                neededRelPaths.size(),
+                allProjects.size());
+
+        // Build effective models for the needed subset using the same ModelBuilder
         // for both old and new states.  This symmetric approach ensures identical
         // lifecycle default plugin versions on both sides, preventing false positives.
         // Old state: changed POMs use their old bytes from git; unchanged POMs use current content.
         // New state: built from current POM files on disk.
         Map<String, Model> oldEffectiveModels =
-                buildEffectiveModels(oldPomContents, allProjects, reactorRoot, resolutionCtx);
-        Map<String, Model> newEffectiveModels = buildCurrentEffectiveModels(allProjects, reactorRoot, resolutionCtx);
+                buildEffectiveModels(oldPomContents, allProjects, reactorRoot, resolutionCtx, neededRelPaths);
+        Map<String, Model> newEffectiveModels =
+                buildCurrentEffectiveModels(allProjects, reactorRoot, resolutionCtx, neededRelPaths);
 
         AnalysisContext ctx = new AnalysisContext();
         ctx.projectByPomPath = projectByPomPath;
@@ -1867,18 +1883,77 @@ class PomChangeAnalyzer {
     }
 
     /**
+     * Computes the set of relative POM paths for which effective models are needed.
+     * <p>
+     * Effective models are only queried for:
+     * <ol>
+     *   <li>The changed POMs themselves — used to diff properties, managed deps, and plugins</li>
+     *   <li>Their dependents (children via parent inheritance and BOM importers) — used to detect
+     *       whether the managed-version or property change actually flows into their effective
+     *       dependency tree</li>
+     * </ol>
+     * Building effective models for the entire reactor wastes memory and time for large
+     * reactors (Quarkus: 1800+ modules) where only a handful of POMs changed (#207).
+     */
+    private Set<String> computeNeededRelPaths(
+            Set<String> changedPomPaths,
+            Map<String, MavenProject> projectByPomPath,
+            Set<MavenProject> parents,
+            Map<MavenProject, List<MavenProject>> bomImporters,
+            Map<MavenProject, List<MavenProject>> descendantMap,
+            Path normalizedRoot) {
+        Set<String> needed = new LinkedHashSet<>();
+        for (String changedPomPath : changedPomPaths) {
+            MavenProject project = projectByPomPath.get(changedPomPath);
+            if (project == null) {
+                continue; // unmatched POM — no effective model needed
+            }
+            // The changed POM itself
+            needed.add(changedPomPath);
+            // Its dependents (children + BOM importers)
+            List<MavenProject> dependents = collectDependents(project, parents, bomImporters, descendantMap);
+            for (MavenProject dependent : dependents) {
+                Path depPomPath = dependent.getFile().toPath().toAbsolutePath().normalize();
+                String depRelPath =
+                        normalizedRoot.relativize(depPomPath).toString().replace('\\', '/');
+                needed.add(depRelPath);
+                // If a BOM importer is itself a parent, its descendants inherit the changed
+                // dependency management via parent inheritance. Include them so their effective
+                // models are built and compared, rather than relying on the conservative fallback
+                // which can miss modules that only inherit (no reactor dependency on the parent).
+                if (parents.contains(dependent)) {
+                    for (MavenProject descendant : descendantMap.getOrDefault(dependent, List.of())) {
+                        Path descPomPath =
+                                descendant.getFile().toPath().toAbsolutePath().normalize();
+                        String descRelPath = normalizedRoot
+                                .relativize(descPomPath)
+                                .toString()
+                                .replace('\\', '/');
+                        needed.add(descRelPath);
+                    }
+                }
+            }
+        }
+        return needed;
+    }
+
+    /**
      * Build old effective models for all reactor POMs by reconstructing the old POM hierarchy
      * in a temporary directory. Changed POMs use their old content from git; unchanged POMs
      * use their current content. This is done ONCE at the start of analysis.
      * <p>
      * The effective models handle property interpolation, parent inheritance, and profile
      * activation — eliminating the need for manual property-to-managed-dep chasing.
+     * <p>
+     * Only the POMs listed in {@code neededRelPaths} are built; other reactor modules are
+     * skipped to avoid heap exhaustion on large reactors (#207).
      */
     Map<String, Model> buildEffectiveModels(
             Map<String, byte[]> oldPomContents,
             List<MavenProject> allProjects,
             Path reactorRoot,
-            ModelResolutionContext resolutionCtx) {
+            ModelResolutionContext resolutionCtx,
+            Set<String> neededRelPaths) {
         if (oldPomContents.isEmpty()) {
             return Map.of();
         }
@@ -1912,6 +1987,9 @@ class PomChangeAnalyzer {
                 Path pomPath = project.getFile().toPath().toAbsolutePath().normalize();
                 Path relativePom = absRoot.relativize(pomPath);
                 String relPath = relativePom.toString().replace('\\', '/');
+                if (!neededRelPaths.contains(relPath)) {
+                    continue; // skip modules not needed for analysis (#207)
+                }
                 Path tempPomFile = tempDir.resolve(relativePom);
 
                 Model model = buildSingleEffectiveModel(
@@ -1937,9 +2015,15 @@ class PomChangeAnalyzer {
      * standalone ModelBuilder used for old models.  This ensures symmetric comparison:
      * both sides use identical lifecycle default plugin versions, so diffing effective
      * models produces no false positives from model-builder asymmetry.
+     * <p>
+     * Only the POMs listed in {@code neededRelPaths} are built; other reactor modules are
+     * skipped to avoid heap exhaustion on large reactors (#207).
      */
     Map<String, Model> buildCurrentEffectiveModels(
-            List<MavenProject> allProjects, Path reactorRoot, ModelResolutionContext resolutionCtx) {
+            List<MavenProject> allProjects,
+            Path reactorRoot,
+            ModelResolutionContext resolutionCtx,
+            Set<String> neededRelPaths) {
         List<String> allActiveProfileIds = collectAllActiveProfileIds(allProjects);
         Path absRoot = reactorRoot.toAbsolutePath().normalize();
 
@@ -1954,6 +2038,9 @@ class PomChangeAnalyzer {
         for (MavenProject project : allProjects) {
             Path pomPath = project.getFile().toPath().toAbsolutePath().normalize();
             String relPath = absRoot.relativize(pomPath).toString().replace('\\', '/');
+            if (!neededRelPaths.contains(relPath)) {
+                continue; // skip modules not needed for analysis (#207)
+            }
 
             Model model = buildSingleEffectiveModel(
                     this.modelBuilder, pomPath, relPath, allActiveProfileIds, resolutionCtx, reactorPomsByGAV);
