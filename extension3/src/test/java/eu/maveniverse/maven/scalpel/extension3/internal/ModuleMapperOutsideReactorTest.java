@@ -8,6 +8,7 @@
 package eu.maveniverse.maven.scalpel.extension3.internal;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -222,7 +223,7 @@ class ModuleMapperOutsideReactorTest {
 
         assertEquals(1, result.getMainAffected().size(), "only lib-a should be affected");
         assertTrue(result.getMainAffected().contains(libA), "lib-a should be in main affected");
-        assertTrue(!result.getMainAffected().contains(libs), "libs must not be attributed");
+        assertFalse(result.getMainAffected().contains(libs), "libs must not be attributed");
     }
 
     private List<MavenProject> createProjects(Path root) {
