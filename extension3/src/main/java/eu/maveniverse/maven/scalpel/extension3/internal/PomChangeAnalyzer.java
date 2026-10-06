@@ -1958,10 +1958,6 @@ class PomChangeAnalyzer {
             return Map.of();
         }
 
-        // Collect ALL active profile IDs across the entire reactor so parent-level
-        // profiles propagate correctly to child modules during standalone model building.
-        List<String> allActiveProfileIds = collectAllActiveProfileIds(allProjects);
-
         Path tempDir = null;
         try {
             tempDir = createSecureTempDirectory("scalpel-old-poms-");
@@ -1992,8 +1988,28 @@ class PomChangeAnalyzer {
                 }
                 Path tempPomFile = tempDir.resolve(relativePom);
 
+                // Use profile IDs from this project only, not the reactor-wide union.
+                // The reactor-wide union causes false matches: if module-a has profile
+                // "extra" active (e.g. activeByDefault) and module-b has a profile
+                // "extra" that is normally inactive (e.g. property-activated), the
+                // reactor-wide set force-activates module-b's "extra" profile when
+                // building its old effective model, making the old model differ from
+                // the new model even though module-b's POM is unchanged (issue #209).
+                //
+                // getActiveProfileIdList() reads the project's own getActiveProfiles()
+                // and walks the parent chain as a defensive measure. In practice, Maven
+                // merges parent-lineage profiles into each child's getActiveProfiles()
+                // during project building, so the parent walk is redundant — but it
+                // guards against edge cases where that merge hasn't happened yet.
+                List<String> projectActiveProfileIds = getActiveProfileIdList(project);
+
                 Model model = buildSingleEffectiveModel(
-                        this.modelBuilder, tempPomFile, relPath, allActiveProfileIds, resolutionCtx, reactorPomsByGAV);
+                        this.modelBuilder,
+                        tempPomFile,
+                        relPath,
+                        projectActiveProfileIds,
+                        resolutionCtx,
+                        reactorPomsByGAV);
                 if (model != null) {
                     result.put(relPath, model);
                 }
@@ -2042,8 +2058,11 @@ class PomChangeAnalyzer {
                 continue; // skip modules not needed for analysis (#207)
             }
 
+            // Use per-project profile IDs (see buildEffectiveModels for rationale).
+            List<String> projectActiveProfileIds = getActiveProfileIdList(project);
+
             Model model = buildSingleEffectiveModel(
-                    this.modelBuilder, pomPath, relPath, allActiveProfileIds, resolutionCtx, reactorPomsByGAV);
+                    this.modelBuilder, pomPath, relPath, projectActiveProfileIds, resolutionCtx, reactorPomsByGAV);
             if (model != null) {
                 result.put(relPath, model);
             }
@@ -2052,20 +2071,31 @@ class PomChangeAnalyzer {
     }
 
     /**
-     * Collect all active profile IDs from every project in the reactor.
-     * Passing the full set to each ModelBuilder request ensures that parent-level
-     * profiles (e.g. a profile in the root POM that adds managed dependencies)
-     * are activated when building child effective models — the ModelBuilder
-     * silently ignores IDs that don't match any profile in the current POM.
+     * Returns the active profile IDs for a project, including profiles from its
+     * ancestor chain (parent, grandparent, etc.), as a list.
+     * <p>
+     * Maven merges parent-lineage profiles into each child's {@code getActiveProfiles()}
+     * during project building, so the parent walk is normally redundant — the child's
+     * own {@code getActiveProfiles()} already contains inherited profiles. The walk is
+     * kept as a defensive measure for edge cases where that merge hasn't happened yet
+     * (e.g. very early lifecycle phases).
+     * <p>
+     * Crucially, this does NOT include profiles from sibling modules — only from the
+     * direct ancestor chain. This avoids the cross-contamination described in issue
+     * #209, where a profile active in a sibling (e.g. via {@code activeByDefault}) was
+     * erroneously force-activated when building another sibling's old effective model.
      */
-    private static List<String> collectAllActiveProfileIds(List<MavenProject> allProjects) {
+    private static List<String> getActiveProfileIdList(MavenProject project) {
         Set<String> ids = new LinkedHashSet<>();
-        for (MavenProject project : allProjects) {
-            if (project.getActiveProfiles() != null) {
-                for (Profile profile : project.getActiveProfiles()) {
+        MavenProject current = project;
+        while (current != null) {
+            List<Profile> activeProfiles = current.getActiveProfiles();
+            if (activeProfiles != null) {
+                for (Profile profile : activeProfiles) {
                     ids.add(profile.getId());
                 }
             }
+            current = current.getParent();
         }
         return new ArrayList<>(ids);
     }
