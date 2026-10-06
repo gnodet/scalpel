@@ -3806,6 +3806,137 @@ class PomChangeAnalyzerTest {
         return Files.readAllBytes(file.toPath());
     }
 
+    // --- isPathAnchoredRawValue unit tests (#213) ---
+
+    @Test
+    void isPathAnchoredRawValue_staticLiteralIsNotPathAnchored() {
+        assertFalse(PomChangeAnalyzer.isPathAnchoredRawValue("target/a.jar"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_projectBasedirIsPathAnchored() {
+        assertTrue(PomChangeAnalyzer.isPathAnchoredRawValue("${project.basedir}/a.jar"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_basedirIsPathAnchored() {
+        assertTrue(PomChangeAnalyzer.isPathAnchoredRawValue("${basedir}/a.jar"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_projectBaseUriIsPathAnchored() {
+        assertTrue(PomChangeAnalyzer.isPathAnchoredRawValue("${project.baseUri}/a.jar"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_buildDirectoryIsPathAnchored() {
+        assertTrue(PomChangeAnalyzer.isPathAnchoredRawValue("${project.build.directory}/a.jar"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_buildOutputDirectoryIsPathAnchored() {
+        assertTrue(PomChangeAnalyzer.isPathAnchoredRawValue("${project.build.outputDirectory}/classes"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_userDefinedPropertyIsNotPathAnchored() {
+        assertFalse(PomChangeAnalyzer.isPathAnchoredRawValue("${my.custom.property}/a.jar"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_mixedPathAnchoredAndUserDefinedIsNotPathAnchored() {
+        // Mixed: contains both a path-anchored token AND a user-defined one — must NOT skip
+        assertFalse(PomChangeAnalyzer.isPathAnchoredRawValue("${project.build.directory}/${my.artifact}.jar"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_multiplePathAnchoredTokensIsPathAnchored() {
+        assertTrue(PomChangeAnalyzer.isPathAnchoredRawValue("${project.basedir}/${project.build.directory}"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_unterminatedPlaceholderIsNotPathAnchored() {
+        assertFalse(PomChangeAnalyzer.isPathAnchoredRawValue("${project.basedir"));
+    }
+
+    @Test
+    void isPathAnchoredRawValue_noPlaceholderIsNotPathAnchored() {
+        assertFalse(PomChangeAnalyzer.isPathAnchoredRawValue("literalvalue"));
+    }
+
+    /**
+     * Regression test for issue #213.
+     * <p>
+     * A child POM declares a property using {@code ${project.build.directory}}.
+     * When only an unrelated property in the parent changes, the child should NOT
+     * be reported as affected — the path-expression difference between the temp dir
+     * (old effective model) and the real dir (new effective model) must be suppressed.
+     */
+    @Test
+    void analyzeChanges_pathAnchoredPropertyDoesNotCauseChildToBeAffected() throws Exception {
+        Path root = setupReactorRoot();
+
+        String newParentPom = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <groupId>com.example</groupId>
+                  <artifactId>parent</artifactId>
+                  <version>1.0</version>
+                  <packaging>pom</packaging>
+                  <properties>
+                      <foo.version>2.0</foo.version>
+                  </properties>
+                  <modules><module>module-a</module><module>module-b</module></modules>
+                </project>
+                """;
+
+        // module-a: property using ${project.build.directory} — should NOT be flagged
+        String moduleAPomXml = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <parent><groupId>com.example</groupId><artifactId>parent</artifactId><version>1.0</version></parent>
+                  <artifactId>module-a</artifactId>
+                  <properties>
+                      <runner>${project.build.directory}/a.jar</runner>
+                  </properties>
+                </project>
+                """;
+
+        // module-b: literal property — should NOT be flagged either (control)
+        String moduleBPomXml = """
+                <?xml version="1.0"?>
+                <project>
+                  <modelVersion>4.0.0</modelVersion>
+                  <parent><groupId>com.example</groupId><artifactId>parent</artifactId><version>1.0</version></parent>
+                  <artifactId>module-b</artifactId>
+                  <properties>
+                      <runner>target/b.jar</runner>
+                  </properties>
+                </project>
+                """;
+
+        writePom(root.resolve("pom.xml"), newParentPom);
+        writePom(root.resolve("module-a/pom.xml"), moduleAPomXml);
+        writePom(root.resolve("module-b/pom.xml"), moduleBPomXml);
+
+        List<MavenProject> projects = buildProjectList(root, newParentPom, moduleAPomXml, moduleBPomXml);
+
+        // Old parent had foo.version=1.0 — the only change is this unrelated property
+        String oldParentPom = newParentPom.replace("<foo.version>2.0</foo.version>", "<foo.version>1.0</foo.version>");
+        Map<String, byte[]> changedPoms = Map.of("pom.xml", oldParentPom.getBytes(StandardCharsets.UTF_8));
+
+        PomChangeAnalyzer.Result result = analyzeChanges(Set.of("pom.xml"), changedPoms, projects, root);
+
+        assertFalse(
+                result.getAffectedProjects().contains(projects.get(1)),
+                "module-a uses ${project.build.directory} — must NOT be marked affected by a path-anchored false positive");
+        assertFalse(
+                result.getAffectedProjects().contains(projects.get(2)),
+                "module-b uses a literal value — must NOT be marked affected");
+    }
+
     /**
      * ModelResolver that resolves parents and BOM imports from the test reactor.
      * Maps GAV coordinates to POM files written by test helpers.
