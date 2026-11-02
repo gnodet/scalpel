@@ -13,6 +13,7 @@ import static java.util.Objects.requireNonNull;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.FileVisitOption;
 import java.nio.file.FileVisitResult;
@@ -56,6 +57,7 @@ import org.apache.maven.model.building.ModelBuildingRequest;
 import org.apache.maven.model.building.ModelBuildingResult;
 import org.apache.maven.model.building.ModelSource;
 import org.apache.maven.model.io.xpp3.MavenXpp3Reader;
+import org.apache.maven.model.io.xpp3.MavenXpp3Writer;
 import org.apache.maven.model.resolution.InvalidRepositoryException;
 import org.apache.maven.model.resolution.ModelResolver;
 import org.apache.maven.model.resolution.UnresolvableModelException;
@@ -1580,6 +1582,20 @@ class PomChangeAnalyzer {
      *
      * <p>When {@code true}, callers may treat the module as test-only affected: it still needs
      * to run its own tests, but compile-time downstream modules need not rebuild (#220).
+     *
+     * <p>The check works by:
+     * <ol>
+     *   <li>Classifying every direct-dependency change as test-only or non-test. If any non-test
+     *       dependency changed, return {@code false} immediately.</li>
+     *   <li>Cloning both models and removing the changed test-scoped dependency entries from each
+     *       clone, leaving only the dependencies whose GA keys are identical in both.</li>
+     *   <li>Serializing both stripped clones with {@link MavenXpp3Writer} and comparing the
+     *       resulting strings. If they differ, some other part of the POM (packaging, parent,
+     *       properties, managed dependencies, plugins, source directories, repositories, profiles,
+     *       …) changed and the module is not test-only.</li>
+     * </ol>
+     * This serialization-based comparison is intentionally exhaustive: it catches any POM section
+     * without enumerating each one individually.
      */
     private boolean isOnlyTestScopedDirectDepChange(byte[] oldPomBytes, MavenProject project) {
         try {
@@ -1587,65 +1603,69 @@ class PomChangeAnalyzer {
             Model oldModel = reader.read(new ByteArrayInputStream(oldPomBytes));
             Model newModel = project.getOriginalModel();
 
-            // Any non-dep change ⇒ not test-only
-            if (!Objects.equals(oldModel.getPackaging(), newModel.getPackaging())) {
-                return false;
-            }
-            // Parent declaration change (different GAV or relativePath) affects inherited
-            // properties, managed deps, and plugin management — always non-test.
-            Parent oldParent = oldModel.getParent();
-            Parent newParent = newModel.getParent();
-            if (!Objects.equals(
-                            oldParent == null ? null : oldParent.getGroupId(),
-                            newParent == null ? null : newParent.getGroupId())
-                    || !Objects.equals(
-                            oldParent == null ? null : oldParent.getArtifactId(),
-                            newParent == null ? null : newParent.getArtifactId())
-                    || !Objects.equals(
-                            oldParent == null ? null : oldParent.getVersion(),
-                            newParent == null ? null : newParent.getVersion())) {
-                return false;
-            }
-            // Property changes may affect compile-scoped dependencies or other build inputs
-            // (e.g. a version property used by an unchanged compile dep). Any property change
-            // disqualifies the leaf from the test-only fast path (#220).
-            if (!diffProperties(oldModel.getProperties(), newModel.getProperties())
-                    .isEmpty()) {
-                return false;
-            }
-            // Managed dependency/plugin changes can affect the effective compile classpath
-            // of this module's dependents even when no direct dep changed scope.
-            if (!equalDependencyLists(getManagedDependencies(oldModel), getManagedDependencies(newModel))) {
-                return false;
-            }
-            if (!equalPluginLists(getManagedPlugins(oldModel), getManagedPlugins(newModel))) {
-                return false;
-            }
-            if (!equalPluginLists(getPlugins(oldModel), getPlugins(newModel))) {
-                return false;
-            }
-            if (!equalSourceDirectories(oldModel, newModel)) {
-                return false;
-            }
-            if (!equalRepositoryLists(safeRepositories(oldModel), safeRepositories(newModel))) {
-                return false;
-            }
-            if (!equalRepositoryLists(safePluginRepositories(oldModel), safePluginRepositories(newModel))) {
-                return false;
-            }
-            // Profile changes count as non-test
-            if (analyzeProfileChanges(oldModel, newModel, getActiveProfileIds(project))) {
-                return false;
-            }
-            // All dep changes must be test-scoped
+            // Step 1: classify dependency changes; bail early on any non-test change.
             DependencyChangeKind kind =
                     classifyDirectDependencyChanges(oldModel.getDependencies(), newModel.getDependencies());
-            return kind == DependencyChangeKind.TEST_ONLY;
+            if (kind != DependencyChangeKind.TEST_ONLY) {
+                return false;
+            }
+
+            // Step 2: collect the GA keys of every dependency that changed between old and new.
+            Set<String> changedTestDepKeys = new LinkedHashSet<>();
+            Map<String, Dependency> oldDepMap = new LinkedHashMap<>();
+            for (Dependency d : oldModel.getDependencies()) {
+                oldDepMap.put(dependencyKey(d), d);
+            }
+            Map<String, Dependency> newDepMap = new LinkedHashMap<>();
+            for (Dependency d : newModel.getDependencies()) {
+                newDepMap.put(dependencyKey(d), d);
+            }
+            for (Map.Entry<String, Dependency> e : oldDepMap.entrySet()) {
+                Dependency newDep = newDepMap.get(e.getKey());
+                if (newDep == null || !equalDependency(e.getValue(), newDep)) {
+                    changedTestDepKeys.add(e.getKey());
+                }
+            }
+            for (String key : newDepMap.keySet()) {
+                if (!oldDepMap.containsKey(key)) {
+                    changedTestDepKeys.add(key);
+                }
+            }
+
+            // Step 3: strip those entries from clones of each model so the remainder can be
+            // compared by serialization.  The clone() method performs a deep copy.
+            Model oldStripped = oldModel.clone();
+            oldStripped.setDependencies(stripKeys(oldStripped.getDependencies(), changedTestDepKeys));
+            Model newStripped = newModel.clone();
+            newStripped.setDependencies(stripKeys(newStripped.getDependencies(), changedTestDepKeys));
+
+            // Step 4: serialize and compare.  Any residual difference (packaging, parent,
+            // properties, managed-deps, plugins, source dirs, repos, profiles, …) is caught here.
+            MavenXpp3Writer writer = new MavenXpp3Writer();
+            StringWriter oldSw = new StringWriter();
+            writer.write(oldSw, oldStripped);
+            StringWriter newSw = new StringWriter();
+            writer.write(newSw, newStripped);
+            return oldSw.toString().equals(newSw.toString());
         } catch (XmlPullParserException | IOException e) {
             // Cannot parse: be conservative and treat as non-test
             logger.debug("Cannot determine test-only scope for {}: {}", key(project), e.getMessage(), e);
             return false;
         }
+    }
+
+    /**
+     * Returns a new list containing only the entries from {@code deps} whose
+     * {@link #dependencyKey} is NOT in {@code keysToRemove}.
+     */
+    private static List<Dependency> stripKeys(List<Dependency> deps, Set<String> keysToRemove) {
+        List<Dependency> result = new ArrayList<>(deps.size());
+        for (Dependency d : deps) {
+            if (!keysToRemove.contains(dependencyKey(d))) {
+                result.add(d);
+            }
+        }
+        return result;
     }
 
     /** Returns {@code true} if the dependency has {@code test} scope (after normalization). */
